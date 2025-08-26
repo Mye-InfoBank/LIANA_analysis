@@ -17,7 +17,7 @@
 --target_cell_types (default: myeloid stromal epithelial T_NK_ILC B_plasma)
 
 --condition_source_cell (default: myeloid) \
---condition_target_cell (default: stromal) \
+--condition_target_cell (default: stromal) 
 
 --logfc_threshold (default: 0.5) \
 --lrscore_threshold (default: 0.9) \
