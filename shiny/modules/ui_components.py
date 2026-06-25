@@ -190,7 +190,7 @@ def create_dotplot_tab() -> ui.TagChild:
                                          "magnitude_rank": "Magnitude Rank",
                                          "specificity_rank": "Specificity Rank",
                                          "lrscore": "LRscore"
-                                     }, selected="magnitude_rank", inline=True),
+                                     }, selected="specificity_rank", inline=True),
                 class_="mb-3"
             ),
             output_widget("dotplot"),

@@ -241,9 +241,37 @@ def create_server_function(data_handler: DataHandler):
             
             return filtered_df
         
+        def get_filtered_data_no_state_update():
+            """Get filtered data without modifying app_state.
 
-        
-        
+            Use this for summary/helper outputs to avoid reactive side effects.
+            """
+            if not app_state.get()['data_loaded']:
+                return pd.DataFrame()
+
+            state = app_state.get()
+            if data_handler.current_splitting_key != state.get('current_splitting_key'):
+                return pd.DataFrame()
+
+            current_contrast = input.contrast()
+
+            if not current_contrast or current_contrast not in data_handler.results:
+                return pd.DataFrame()
+
+            df = data_handler.results[current_contrast]
+
+            filtered_df = data_handler.filter_interactions(
+                df,
+                logfc_threshold=input.logfc_threshold() if input.logfc_threshold() is not None else 0.0,
+                lrscore_threshold=input.lrscore_threshold() if input.lrscore_threshold() is not None else 0.0,
+                specificity_threshold=input.specificity_threshold() if input.specificity_threshold() is not None else 0.1,
+                min_source_cells=input.min_source_cells() if input.min_source_cells() is not None else 0,
+                min_target_cells=input.min_target_cells() if input.min_target_cells() is not None else 0,
+                source_types=input.source_types() or None,
+                target_types=input.target_types() or None
+            )
+
+            return filtered_df
         
         @output
         @render_plotly
@@ -323,16 +351,40 @@ def create_server_function(data_handler: DataHandler):
         @output
         @render_plotly
         def summary_plot():
-            """Render summary statistics plot."""
-            if not app_state.get()['data_loaded']:
+            """Render summary statistics plot based on filtered data."""
+            df = get_filtered_data_no_state_update()
+
+            if df.empty:
                 return create_summary_barplot({})
-            
-            current_contrast = input.contrast()
-            if current_contrast and current_contrast in data_handler.results:
-                stats = data_handler.get_summary_stats(current_contrast)
-                return create_summary_barplot(stats)
-            
-            return create_summary_barplot({})
+
+            stats = {}
+
+            stats["filtered_interactions"] = len(df)
+
+            if all(col in df.columns for col in ["source", "target"]):
+                stats["unique_cell_type_pairs"] = len(
+                    df[["source", "target"]].drop_duplicates()
+                )
+
+            if "ligand_complex" in df.columns:
+                stats["unique_ligands"] = df["ligand_complex"].nunique()
+
+            if "receptor_complex" in df.columns:
+                stats["unique_receptors"] = df["receptor_complex"].nunique()
+
+            if "source" in df.columns:
+                stats["unique_sources"] = df["source"].nunique()
+
+            if "target" in df.columns:
+                stats["unique_targets"] = df["target"].nunique()
+
+            if "lrscore" in df.columns:
+                stats["median_lrscore_x100"] = df["lrscore"].median() * 100
+
+            if "lr_logfc" in df.columns:
+                stats["median_logfc_x100"] = df["lr_logfc"].median() * 100
+
+            return create_summary_barplot(stats)
         
         @output
         @render.data_frame
@@ -371,38 +423,54 @@ def create_server_function(data_handler: DataHandler):
         @output
         @render.data_frame
         def top_pairs_table():
-            """Render top cell type pairs table."""
-            if not app_state.get()['data_loaded']:
-                return pd.DataFrame()
-            
-            current_contrast = input.contrast()
-            if current_contrast and current_contrast in data_handler.results:
-                df = data_handler.results[current_contrast]
-                if not df.empty and all(col in df.columns for col in ['source', 'target']):
-                    pair_counts = df.groupby(['source', 'target']).size().reset_index(name='interactions')
-                    pair_counts = pair_counts.sort_values('interactions', ascending=False).head(10)
-                    pair_counts['cell_pair'] = pair_counts['source'] + ' → ' + pair_counts['target']
-                    return pair_counts[['cell_pair', 'interactions']]
-            
-            return pd.DataFrame({"Message": ["No data available"]})
+            """Render top cell type pairs table based on filtered data."""
+            df = get_filtered_data_no_state_update()
+
+            if df.empty:
+                return pd.DataFrame({"Message": ["No data available with current filters"]})
+
+            if not all(col in df.columns for col in ["source", "target"]):
+                return pd.DataFrame({"Message": ["source/target columns missing"]})
+
+            pair_counts = (
+                df.groupby(["source", "target"])
+                .size()
+                .reset_index(name="filtered_interactions")
+                .sort_values("filtered_interactions", ascending=False)
+                .head(10)
+            )
+
+            pair_counts["cell_pair"] = (
+                pair_counts["source"] + " → " + pair_counts["target"]
+            )
+
+            return pair_counts[["cell_pair", "filtered_interactions"]]
         
         @output
         @render.data_frame
         def top_lr_pairs_table():
-            """Render top ligand-receptor pairs table."""
-            if not app_state.get()['data_loaded']:
-                return pd.DataFrame()
-            
-            current_contrast = input.contrast()
-            if current_contrast and current_contrast in data_handler.results:
-                df = data_handler.results[current_contrast]
-                if not df.empty and all(col in df.columns for col in ['ligand_complex', 'receptor_complex']):
-                    lr_counts = df.groupby(['ligand_complex', 'receptor_complex']).size().reset_index(name='interactions')
-                    lr_counts = lr_counts.sort_values('interactions', ascending=False).head(10)
-                    lr_counts['lr_pair'] = lr_counts['ligand_complex'] + ' → ' + lr_counts['receptor_complex']
-                    return lr_counts[['lr_pair', 'interactions']]
-            
-            return pd.DataFrame({"Message": ["No data available"]        })
+            """Render top ligand-receptor pairs table based on filtered data."""
+            df = get_filtered_data_no_state_update()
+
+            if df.empty:
+                return pd.DataFrame({"Message": ["No data available with current filters"]})
+
+            if not all(col in df.columns for col in ["ligand_complex", "receptor_complex"]):
+                return pd.DataFrame({"Message": ["ligand/receptor columns missing"]})
+
+            lr_counts = (
+                df.groupby(["ligand_complex", "receptor_complex"])
+                .size()
+                .reset_index(name="filtered_interactions")
+                .sort_values("filtered_interactions", ascending=False)
+                .head(10)
+            )
+
+            lr_counts["lr_pair"] = (
+                lr_counts["ligand_complex"] + " → " + lr_counts["receptor_complex"]
+            )
+
+            return lr_counts[["lr_pair", "filtered_interactions"]]
         
         # Auto-discover data on startup when data directory is set via CLI
         @reactive.effect

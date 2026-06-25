@@ -627,9 +627,9 @@ def create_heatmap_plot(df: pd.DataFrame,
 
 def create_dotplot(df: pd.DataFrame, 
                   top_n: int = 20,
-                  size_col: str = 'specificity_rank',
-                  color_col: str = 'magnitude_rank',
-                  x_col: str = 'lrscore') -> go.Figure:
+                  size_col: str = 'lrscore',
+                  color_col: str = 'specificity_rank',
+                  x_col: str = 'lr_logfc') -> go.Figure:
     """
     Create a dot plot of top interactions.
     
