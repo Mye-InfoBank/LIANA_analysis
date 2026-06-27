@@ -46,7 +46,7 @@ def create_server_function(data_handler: DataHandler):
             'current_contrast': None,
             'filtered_data': pd.DataFrame(),
             'summary_stats': {},
-            'splitting_keys_summary': {}
+            'splitting_keys_summary': {},
         })
         
         # Trigger for auto-discovery
@@ -54,6 +54,9 @@ def create_server_function(data_handler: DataHandler):
         
         # Track user's desired contrast selection across loads
         desired_contrast = reactive.Value(None)
+        
+        # Dedicated reactive trigger/data for the Data Explorer count plot
+        interaction_counts_state = reactive.Value({})
         
 
         
@@ -171,12 +174,20 @@ def create_server_function(data_handler: DataHandler):
                                    selected=data_handler.cell_types[1] if len(data_handler.cell_types) > 1 else None)
                     
                     
+                    # Count rows per loaded dataset/contrast
+                    counts_for_plot = {
+                        name: int(len(df)) if df is not None else 0
+                        for name, df in results.items()
+                    }
+
+                    interaction_counts_state.set(counts_for_plot)
+                    logger.info(f"Interaction counts for Data Explorer plot: {counts_for_plot}")
                     # Update app state
                     current_state = app_state.get()
                     current_state.update({
                         'data_loaded': True,
                         'current_splitting_key': splitting_key,
-                        'current_contrast': preferred
+                        'current_contrast': preferred,
                     })
                     app_state.set(current_state)
                     
@@ -655,9 +666,26 @@ def create_server_function(data_handler: DataHandler):
         @output
         @render_plotly
         def structure_overview_plot():
-            """Render structure overview plot."""
-            summary = app_state.get().get('splitting_keys_summary', {})
-            return create_structure_overview_plot(summary)
-    
-        
+            """Render simple interaction counts per loaded dataset/contrast."""
+
+            counts = interaction_counts_state.get()
+
+            logger.info(f"Rendering structure_overview_plot with counts: {counts}")
+
+            if not counts:
+                return create_structure_overview_plot(pd.DataFrame())
+
+            count_df = pd.DataFrame([
+                {"contrast": contrast, "interactions": n}
+                for contrast, n in counts.items()
+            ])
+
+            preferred_order = ["full", "HC", "UC", "CD"]
+            count_df["order"] = count_df["contrast"].apply(
+                lambda x: preferred_order.index(x) if x in preferred_order else 999
+            )
+            count_df = count_df.sort_values("order").drop(columns="order")
+
+            return create_structure_overview_plot(count_df)
+                
     return server

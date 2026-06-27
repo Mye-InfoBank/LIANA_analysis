@@ -183,8 +183,14 @@ def create_dotplot_tab() -> ui.TagChild:
         "🎯 Dot Plot", 
         ui.div(
             ui.div(
-                ui.input_numeric("top_n_interactions", "Top N Interactions:", 
-                               value=20, min=5, max=100, step=5),
+                ui.input_slider(
+                    "top_n_interactions",
+                    "Top N Interactions:",
+                    min=5,
+                    max=200,
+                    value=20,
+                    step=5
+                ),
                 ui.input_radio_buttons("dotplot_color", "Color By:",
                                      choices={
                                          "magnitude_rank": "Magnitude Rank",
@@ -309,7 +315,11 @@ def create_data_explorer_tab() -> ui.TagChild:
                 ui.h4("Discovered Analysis Types"),
                 ui.output_data_frame("splitting_keys_table"),
                 ui.br(),
-                ui.h4("Analysis Structure Overview"),
+                ui.h4("Number of Interactions per Dataset"),
+                ui.p(
+                    "Raw number of LIANA result rows loaded for each dataset/contrast.",
+                    class_="text-muted"
+                ),
                 output_widget("structure_overview_plot"),
                 class_="mb-3"
             ),

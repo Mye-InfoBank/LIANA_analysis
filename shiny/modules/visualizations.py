@@ -959,73 +959,75 @@ def create_summary_barplot(summary_stats: Dict) -> go.Figure:
         logger.error(f"Error creating summary plot: {e}")
         return go.Figure()
 
-def create_structure_overview_plot(splitting_keys_summary: Dict) -> go.Figure:
+def create_structure_overview_plot(count_df: pd.DataFrame) -> go.Figure:
     """
-    Create an overview plot of the data structure across splitting keys.
-    
-    Args:
-        splitting_keys_summary: Dictionary with summary for each splitting key
-        
-    Returns:
-        Plotly Figure object
+    Plot number of LIANA interactions per loaded contrast.
     """
-    if not splitting_keys_summary:
+
+    if count_df is None or count_df.empty:
         fig = go.Figure()
         fig.add_annotation(
-            text="No structure data available", 
-            xref="paper", yref="paper",
-            x=0.5, y=0.5, showarrow=False
+            text="No interaction count data available",
+            xref="paper",
+            yref="paper",
+            x=0.5,
+            y=0.5,
+            showarrow=False,
+            font=dict(size=16)
         )
+        fig.update_layout(height=450)
         return fig
-    
-    try:
-        # Prepare data
-        splitting_keys = list(splitting_keys_summary.keys())
-        num_conditions = [info['num_conditions'] for info in splitting_keys_summary.values()]
-        total_interactions = [info['total_interactions'] for info in splitting_keys_summary.values()]
-        
-        # Create subplot with secondary y-axis
-        fig = make_subplots(specs=[[{"secondary_y": True}]])
-        
-        # Add bar chart for number of conditions
-        fig.add_trace(
-            go.Bar(
-                x=splitting_keys,
-                y=num_conditions,
-                name="Number of Conditions",
-                marker_color='lightblue',
-                yaxis='y1'
+
+    plot_df = count_df.copy()
+
+    fig = go.Figure()
+
+    fig.add_trace(
+        go.Bar(
+            x=plot_df["contrast"],
+            y=plot_df["interactions"],
+            text=plot_df["interactions"],
+            texttemplate="%{text:,}",
+            textposition="outside",
+            width=0.65,
+            marker=dict(
+                color="steelblue",
+                line=dict(width=1, color="black")
             ),
-            secondary_y=False,
-        )
-        
-        # Add line chart for total interactions
-        fig.add_trace(
-            go.Scatter(
-                x=splitting_keys,
-                y=total_interactions,
-                mode='lines+markers',
-                name="Total Interactions",
-                line=dict(color='red', width=3),
-                marker=dict(size=8),
-                yaxis='y2'
+            hovertemplate=(
+                "Dataset: %{x}<br>"
+                "Interactions: %{y:,}"
+                "<extra></extra>"
             ),
-            secondary_y=True,
+            name="Interactions"
         )
-        
-        # Update layout
-        fig.update_xaxes(title_text="Analysis Type")
-        fig.update_yaxes(title_text="Number of Conditions", secondary_y=False)
-        fig.update_yaxes(title_text="Total Interactions", secondary_y=True)
-        
-        fig.update_layout(
-            title="Data Structure Overview Across Analysis Types",
-            legend=dict(x=0.01, y=0.99),
-            height=400
-        )
-        
-        return fig
-        
-    except Exception as e:
-        logger.error(f"Error creating structure overview plot: {e}")
-        return go.Figure()
+    )
+
+    fig.update_layout(
+        title=dict(
+            text="Number of LIANA Interactions per Dataset",
+            font=dict(size=18),
+            x=0.5,
+            xanchor="center"
+        ),
+        xaxis_title="Dataset / contrast",
+        yaxis_title="Number of interactions",
+        height=520,
+        width=900,
+        margin=dict(l=90, r=40, t=90, b=80),
+        showlegend=False,
+        bargap=0.25
+    )
+
+    fig.update_xaxes(
+        tickfont=dict(size=13),
+        title_font=dict(size=14)
+    )
+
+    fig.update_yaxes(
+        tickfont=dict(size=12),
+        title_font=dict(size=14),
+        rangemode="tozero"
+    )
+
+    return fig   
