@@ -18,7 +18,6 @@ from .visualizations import (
     create_volcano_plot,
     create_summary_barplot,
     create_structure_overview_plot,
-    create_cross_analysis_comparison,
 )
 from .ui_components import create_sidebar, create_main_content, create_full_ui
 from .server_logic import create_server_function

@@ -16,7 +16,7 @@ from .visualizations import (
     create_network_plot, create_cell_count_network_plot,
     create_heatmap_plot, create_dotplot, 
     create_scatter_comparison, create_volcano_plot, create_summary_barplot,
-    create_structure_overview_plot, create_cross_analysis_comparison
+    create_structure_overview_plot
 )
 from .utils import (
     validate_input_parameters, calculate_interaction_stats,
@@ -170,11 +170,6 @@ def create_server_function(data_handler: DataHandler):
                     ui.update_select("comparison_target", choices=data_handler.cell_types,
                                    selected=data_handler.cell_types[1] if len(data_handler.cell_types) > 1 else None)
                     
-                    # Update cross-analysis controls
-                    ui.update_select("cross_analysis_source", choices=data_handler.cell_types)
-                    ui.update_select("cross_analysis_target", choices=data_handler.cell_types)
-                    ui.update_selectize("compare_splitting_keys", choices=data_handler.splitting_keys, 
-                                      selected=data_handler.splitting_keys[:3])  # Select first 3 by default
                     
                     # Update app state
                     current_state = app_state.get()
@@ -663,25 +658,6 @@ def create_server_function(data_handler: DataHandler):
             """Render structure overview plot."""
             summary = app_state.get().get('splitting_keys_summary', {})
             return create_structure_overview_plot(summary)
-        
-        @output
-        @render_plotly
-        def cross_analysis_plot():
-            """Render cross-analysis comparison plot."""
-            source_cell = input.cross_analysis_source()
-            target_cell = input.cross_analysis_target()
-            compare_keys = input.compare_splitting_keys()
-            
-            if not source_cell or not target_cell or not compare_keys:
-                return create_cross_analysis_comparison(pd.DataFrame(), "", "")
-            
-            try:
-                combined_df = data_handler.compare_across_splitting_keys(
-                    source_cell, target_cell, compare_keys
-                )
-                return create_cross_analysis_comparison(combined_df, source_cell, target_cell)
-            except Exception as e:
-                logger.error(f"Error creating cross-analysis comparison: {e}")
-                return create_cross_analysis_comparison(pd.DataFrame(), source_cell, target_cell)
+    
         
     return server

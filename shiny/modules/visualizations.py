@@ -665,13 +665,17 @@ def create_dotplot(df: pd.DataFrame,
         
         # Create interaction labels
         top_interactions['interaction_label'] = (
-            top_interactions['ligand_complex'] + ' → ' + 
-            top_interactions['receptor_complex']
+            top_interactions['ligand_complex'].astype(str) + ' → ' + 
+            top_interactions['receptor_complex'].astype(str)
         )
-        
+
         top_interactions['cell_pair'] = (
-            top_interactions['source'] + ' → ' + 
-            top_interactions['target']
+            top_interactions['source'].astype(str) + ' → ' + 
+            top_interactions['target'].astype(str)
+        )
+
+        top_interactions['plot_label'] = (
+            top_interactions['cell_pair'] + ' | ' + top_interactions['interaction_label']
         )
         
         # Calculate sizes with conservative scaling (approx 6–18 px)
@@ -727,11 +731,10 @@ def create_dotplot(df: pd.DataFrame,
             yaxis=dict(
                 tickmode='array',
                 tickvals=list(range(len(top_interactions))),
-                ticktext=[f"{row['ligand_complex']} → {row['receptor_complex']}" 
-                         for _, row in top_interactions.iterrows()]
+                ticktext=top_interactions['plot_label'].tolist()
             ),
             height=max(400, len(top_interactions) * 25),
-            margin=dict(l=200, r=50, t=50, b=50)
+            margin=dict(l=380, r=50, t=50, b=50)
         )
         
         return fig
@@ -1026,87 +1029,3 @@ def create_structure_overview_plot(splitting_keys_summary: Dict) -> go.Figure:
     except Exception as e:
         logger.error(f"Error creating structure overview plot: {e}")
         return go.Figure()
-
-def create_cross_analysis_comparison(combined_df: pd.DataFrame, 
-                                   source_cell: str, 
-                                   target_cell: str) -> go.Figure:
-    """
-    Create a comparison plot across different analysis types (splitting keys).
-    
-    Args:
-        combined_df: DataFrame with data from multiple splitting keys
-        source_cell: Source cell type
-        target_cell: Target cell type
-        
-    Returns:
-        Plotly Figure object
-    """
-    if combined_df.empty:
-        fig = go.Figure()
-        fig.add_annotation(
-            text="No data available for cross-analysis comparison", 
-            xref="paper", yref="paper",
-            x=0.5, y=0.5, showarrow=False
-        )
-        return fig
-    
-    try:
-        # Create interaction labels
-        combined_df = combined_df.copy()
-        combined_df['interaction_label'] = (
-            combined_df['ligand_complex'] + ' → ' + combined_df['receptor_complex']
-        )
-        
-        # Create the comparison plot
-        fig = px.scatter(
-            combined_df,
-            x="splitting_key",
-            y="interaction_label",
-            size="lrscore" if "lrscore" in combined_df.columns else None,
-            color="lr_means" if "lr_means" in combined_df.columns else None,
-            color_continuous_scale="Viridis",
-            hover_data=[
-                col for col in [
-                    "source",
-                    "target",
-                    "specificity_rank",
-                    "magnitude_rank",
-                    "lr_logfc",
-                    "lrscore",
-                    "lr_means"
-                ]
-                if col in combined_df.columns
-            ],
-            title=f"Cross-Analysis Comparison: {source_cell} → {target_cell}",
-        )
-
-        n_pairs = combined_df["interaction_label"].nunique()
-
-        fig.update_layout(
-            xaxis_title="Analysis Type",
-            yaxis_title="Ligand → Receptor",
-            height=max(520, n_pairs * 24),
-            margin=dict(l=230, r=130, t=60, b=50),
-        )
-
-        fig.update_yaxes(
-            automargin=False,
-            tickfont=dict(size=10),
-        )
-
-        fig.update_xaxes(
-            automargin=False,
-            tickfont=dict(size=11),
-        )
-
-        return fig
-        
-    except Exception as e:
-        logger.error(f"Error creating cross-analysis comparison: {e}")
-        fig = go.Figure()
-        fig.add_annotation(
-            text=f"Error creating comparison plot: {str(e)}", 
-            xref="paper", yref="paper",
-            x=0.5, y=0.5, showarrow=False
-        )
-        return fig

@@ -311,25 +311,6 @@ def create_data_explorer_tab() -> ui.TagChild:
                 ui.br(),
                 ui.h4("Analysis Structure Overview"),
                 output_widget("structure_overview_plot"),
-                ui.br(),
-                ui.h4("Cross-Analysis Comparison"),
-                ui.input_select("cross_analysis_source", "Source Cell Type:", choices=[]),
-                ui.input_select("cross_analysis_target", "Target Cell Type:", choices=[]),
-                ui.input_selectize("compare_splitting_keys", "Analysis Types to Compare:", 
-                                  choices=[], selected=[], multiple=True),
-                #output_widget("cross_analysis_plot"),
-                ui.div(
-                    output_widget("cross_analysis_plot", height="100%"),
-                    style=(
-                        "height: 650px; "
-                        "width: 100%; "
-                        "overflow-y: auto; "
-                        "overflow-x: hidden; "
-                        "border: 1px solid #dee2e6; "
-                        "border-radius: 8px; "
-                        "padding: 8px;"
-                    )
-                ),
                 class_="mb-3"
             ),
             style="height: 900px; overflow-y: auto; overflow-x: hidden;"

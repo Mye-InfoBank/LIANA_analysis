@@ -231,47 +231,6 @@ class DataHandler:
         
         return summary
     
-    def compare_across_splitting_keys(self, source_cell: str, target_cell: str, 
-                                    splitting_keys: Optional[List[str]] = None) -> pd.DataFrame:
-        """
-        Compare interactions across different splitting keys.
-        
-        Args:
-            source_cell: Source cell type
-            target_cell: Target cell type
-            splitting_keys: List of splitting keys to compare (default: all)
-            
-        Returns:
-            Combined DataFrame for comparison
-        """
-        if not splitting_keys:
-            splitting_keys = self.splitting_keys
-        
-        combined_data = []
-        
-        for key in splitting_keys:
-            try:
-                # Temporarily load data for this splitting key
-                temp_results, _ = self.load_splitting_key_data(key)
-                
-                # Get main results for this splitting key
-                if 'full' in temp_results:
-                    df = temp_results['full']
-                    condition_data = df[
-                        (df['source'] == source_cell) & 
-                        (df['target'] == target_cell)
-                    ].copy()
-                    condition_data['splitting_key'] = key
-                    combined_data.append(condition_data)
-                    
-            except Exception as e:
-                logger.warning(f"Error loading data for splitting key {key}: {e}")
-        
-        if not combined_data:
-            return pd.DataFrame()
-        
-        return pd.concat(combined_data, ignore_index=True)
-    
     def _extract_cell_types(self, results: Dict) -> List[str]:
         """Extract unique cell types from results."""
         all_cell_types = set()
