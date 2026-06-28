@@ -1,0 +1,23 @@
+services:
+  liana-colon:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: liana-results-explorer:latest
+    container_name: liana-colon
+    ports:
+      - "8091:8080"
+    environment:
+      - PORT=8080
+      - DATA_DIR=/app/results_IBD/colon
+    restart: unless-stopped
+
+  liana-ileum:
+    image: liana-results-explorer:latest
+    container_name: liana-ileum
+    ports:
+      - "8092:8080"
+    environment:
+      - PORT=8080
+      - DATA_DIR=/app/results_IBD/ileum
+    restart: unless-stopped

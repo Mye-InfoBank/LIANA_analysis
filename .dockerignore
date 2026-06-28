@@ -1,0 +1,31 @@
+.git
+.github
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Virtual environments and caches
+.venv/
+venv/
+.cache/
+.conda/
+.mypy_cache/
+
+# Logs and temporary files
+logs/
+*.log
+tmp/
+temp/
+
+# Editor/system files
+.vscode/
+.idea/
+.DS_Store
+
+# Large generated folders not needed in Docker image
+output/
