@@ -1030,4 +1030,854 @@ def create_structure_overview_plot(count_df: pd.DataFrame) -> go.Figure:
         rangemode="tozero"
     )
 
-    return fig   
+    return fig 
+
+def create_global_condition_dotplot(
+    results_dict: Dict[str, pd.DataFrame],
+    top_n: Optional[int] = None
+) -> go.Figure:
+    """
+    Global interaction overview across conditions.
+
+    Keeps the complete interaction identity:
+        source
+        target
+        ligand
+        receptor
+
+    x = condition
+    y = source → target | ligand → receptor
+    dot size = LRscore
+    dot color = specificity rank
+
+    If top_n is supplied, the same globally selected Top N
+    interactions are displayed across all conditions.
+    """
+
+    combined = []
+
+    required = {
+        "source",
+        "target",
+        "ligand_complex",
+        "receptor_complex"
+    }
+
+    for condition, df in results_dict.items():
+
+        if condition == "full":
+            continue
+
+        if df is None or df.empty:
+            continue
+
+        if not required.issubset(df.columns):
+            continue
+
+        tmp = df.copy()
+        tmp["condition"] = condition
+
+        combined.append(tmp)
+
+    if not combined:
+        fig = go.Figure()
+
+        fig.add_annotation(
+            text="No condition data available",
+            x=0.5,
+            y=0.5,
+            xref="paper",
+            yref="paper",
+            showarrow=False
+        )
+
+        return fig
+
+    combined_df = pd.concat(
+        combined,
+        ignore_index=True
+    )
+
+    # ------------------------------------------------------------
+    # One row per condition + complete interaction identity
+    # ------------------------------------------------------------
+
+    interaction_keys = [
+        "condition",
+        "source",
+        "target",
+        "ligand_complex",
+        "receptor_complex"
+    ]
+
+    agg_dict = {}
+
+    for col in [
+        "lrscore",
+        "specificity_rank",
+        "magnitude_rank",
+        "lr_means",
+        "lr_logfc"
+    ]:
+        if col in combined_df.columns:
+            agg_dict[col] = "median"
+
+    if agg_dict:
+        combined_df = (
+            combined_df
+            .groupby(
+                interaction_keys,
+                as_index=False
+            )
+            .agg(agg_dict)
+        )
+
+    # ------------------------------------------------------------
+    # Interaction labels
+    # ------------------------------------------------------------
+
+    combined_df["cell_pair"] = (
+        combined_df["source"].astype(str)
+        + " → "
+        + combined_df["target"].astype(str)
+    )
+
+    combined_df["lr_pair"] = (
+        combined_df["ligand_complex"].astype(str)
+        + " → "
+        + combined_df["receptor_complex"].astype(str)
+    )
+
+    combined_df["interaction_label"] = (
+        combined_df["cell_pair"]
+        + " | "
+        + combined_df["lr_pair"]
+    )
+
+    # ------------------------------------------------------------
+    # Select GLOBAL Top N
+    #
+    # Important:
+    # We do NOT select Top N separately for each condition.
+    # Otherwise the conditions would contain different rows.
+    # ------------------------------------------------------------
+
+    if top_n is not None and top_n > 0:
+
+        if "magnitude_rank" in combined_df.columns:
+
+            ranking = (
+                combined_df
+                .groupby("interaction_label")["magnitude_rank"]
+                .median()
+                .sort_values(ascending=True)
+            )
+
+        elif "lrscore" in combined_df.columns:
+
+            ranking = (
+                combined_df
+                .groupby("interaction_label")["lrscore"]
+                .median()
+                .sort_values(ascending=False)
+            )
+
+        else:
+
+            ranking = pd.Series(
+                combined_df["interaction_label"].drop_duplicates().index,
+                index=combined_df["interaction_label"].drop_duplicates()
+            )
+
+        selected_interactions = (
+            ranking
+            .head(top_n)
+            .index
+        )
+
+        combined_df = combined_df[
+            combined_df["interaction_label"].isin(
+                selected_interactions
+            )
+        ].copy()
+
+    # ------------------------------------------------------------
+    # Order interactions consistently
+    # ------------------------------------------------------------
+
+    if "magnitude_rank" in combined_df.columns:
+
+        interaction_order = (
+            combined_df
+            .groupby("interaction_label")["magnitude_rank"]
+            .median()
+            .sort_values(ascending=False)
+            .index
+            .tolist()
+        )
+
+    elif "lrscore" in combined_df.columns:
+
+        interaction_order = (
+            combined_df
+            .groupby("interaction_label")["lrscore"]
+            .median()
+            .sort_values(ascending=True)
+            .index
+            .tolist()
+        )
+
+    else:
+
+        interaction_order = sorted(
+            combined_df["interaction_label"].unique()
+        )
+
+    # ------------------------------------------------------------
+    # Condition order
+    # ------------------------------------------------------------
+
+    preferred_order = [
+        c for c in ["HC", "UC", "CD"]
+        if c in combined_df["condition"].unique()
+    ]
+
+    other_conditions = [
+        c
+        for c in combined_df["condition"].unique()
+        if c not in preferred_order
+    ]
+
+    condition_order = (
+        preferred_order
+        + sorted(other_conditions)
+    )
+
+    # ------------------------------------------------------------
+    # Make plotted metrics JSON-safe
+    # ------------------------------------------------------------
+
+    combined_df = combined_df.replace(
+        [np.inf, -np.inf],
+        np.nan
+    )
+
+    combined_df = combined_df.dropna(
+        subset=["lrscore", "specificity_rank", "magnitude_rank"]
+    )
+    # ------------------------------------------------------------
+    # Plot
+    # ------------------------------------------------------------
+
+    fig = px.scatter(
+        combined_df,
+
+        x="condition",
+        y="interaction_label",
+
+        size=(
+            "lrscore"
+            if "lrscore" in combined_df.columns
+            else None
+        ),
+
+        color=(
+            "specificity_rank"
+            if "specificity_rank" in combined_df.columns
+            else None
+        ),
+
+        color_continuous_scale="Viridis_r",
+
+        category_orders={
+            "condition": condition_order,
+            "interaction_label": interaction_order
+        },
+
+        hover_data={
+            "source": True,
+            "target": True,
+            "ligand_complex": True,
+            "receptor_complex": True,
+
+            "lrscore": ":.3f"
+            if "lrscore" in combined_df.columns
+            else False,
+
+            "specificity_rank": ":.3f"
+            if "specificity_rank" in combined_df.columns
+            else False,
+
+            "magnitude_rank": ":.3f"
+            if "magnitude_rank" in combined_df.columns
+            else False
+        },
+
+        size_max=20
+    )
+
+    fig.update_layout(
+        title="Interaction Landscape Across Conditions",
+
+        xaxis_title="Condition",
+
+        yaxis_title=(
+            "Source → Target | Ligand → Receptor"
+        ),
+
+        height=max(
+            600,
+            len(
+                combined_df[
+                    "interaction_label"
+                ].unique()
+            ) * 24
+        ),
+
+        margin=dict(
+            l=430,
+            r=100,
+            t=70,
+            b=70
+        )
+    )
+
+    return fig  
+
+def create_matched_condition_difference(
+    df_a: pd.DataFrame,
+    df_b: pd.DataFrame,
+    metric: str = "lrscore"
+) -> pd.DataFrame:
+    """
+    Match identical LIANA interactions between two conditions.
+
+    Interaction identity:
+        source
+        target
+        ligand_complex
+        receptor_complex
+
+    Delta is calculated as:
+
+        metric(condition A) - metric(condition B)
+
+    Only interactions present in BOTH conditions are used.
+    """
+
+    keys = [
+        "source",
+        "target",
+        "ligand_complex",
+        "receptor_complex"
+    ]
+
+    required_a = set(keys + [metric])
+    required_b = set(keys + [metric])
+
+    if df_a is None or df_b is None:
+        return pd.DataFrame()
+
+    if df_a.empty or df_b.empty:
+        return pd.DataFrame()
+
+    if not required_a.issubset(df_a.columns):
+        return pd.DataFrame()
+
+    if not required_b.issubset(df_b.columns):
+        return pd.DataFrame()
+
+    # ------------------------------------------------------------
+    # In case duplicate interaction rows exist, aggregate first
+    # ------------------------------------------------------------
+
+    a = (
+        df_a[
+            keys + [metric]
+        ]
+        .groupby(
+            keys,
+            as_index=False
+        )[metric]
+        .median()
+    )
+
+    b = (
+        df_b[
+            keys + [metric]
+        ]
+        .groupby(
+            keys,
+            as_index=False
+        )[metric]
+        .median()
+    )
+
+    # ------------------------------------------------------------
+    # Inner join = matched interactions only
+    # ------------------------------------------------------------
+
+    matched = a.merge(
+        b,
+        on=keys,
+        how="inner",
+        suffixes=("_a", "_b")
+    )
+
+    delta_col = f"delta_{metric}"
+
+    matched[delta_col] = (
+        matched[f"{metric}_a"]
+        - matched[f"{metric}_b"]
+    )
+
+    return matched
+
+def create_cell_pair_difference_heatmap(
+    df_a: pd.DataFrame,
+    df_b: pd.DataFrame,
+    condition_a: str,
+    condition_b: str,
+    metric: str = "lrscore",
+    top_n: Optional[int] = None
+) -> go.Figure:
+    """
+    Compare cell-cell communication between two conditions.
+
+    For each matched LR interaction:
+        delta = metric(A) - metric(B)
+
+    Then aggregate those deltas by:
+        source + target
+
+    Heatmap value:
+        median delta across matched LR interactions
+    """
+
+    matched = create_matched_condition_difference(
+        df_a,
+        df_b,
+        metric=metric
+    )
+
+    if matched.empty:
+
+        fig = go.Figure()
+
+        fig.add_annotation(
+            text="No matched interactions available",
+            x=0.5,
+            y=0.5,
+            xref="paper",
+            yref="paper",
+            showarrow=False
+        )
+
+        return fig
+
+    delta_col = f"delta_{metric}"
+
+    # ------------------------------------------------------------
+    # Aggregate interaction changes by cell-cell pair
+    # ------------------------------------------------------------
+
+    summary = (
+        matched
+        .groupby(
+            ["source", "target"]
+        )
+        .agg(
+            median_delta=(
+                delta_col,
+                "median"
+            ),
+
+            matched_lr_interactions=(
+                delta_col,
+                "size"
+            )
+        )
+        .reset_index()
+    )
+    
+    summary = summary.replace(
+        [np.inf, -np.inf],
+        np.nan
+    )
+
+    summary = summary.dropna(
+        subset=["median_delta"]
+    )
+
+    summary["abs_change"] = (
+        summary["median_delta"].abs()
+    )
+
+    # ------------------------------------------------------------
+    # Top N here means:
+    # most changed CELL-CELL pairs
+    # ------------------------------------------------------------
+
+    if top_n is not None and top_n > 0:
+
+        summary = (
+            summary
+            .sort_values(
+                "abs_change",
+                ascending=False
+            )
+            .head(top_n)
+        )
+
+    # ------------------------------------------------------------
+    # Pivot into source x target matrix
+    # ------------------------------------------------------------
+
+    matrix = summary.pivot(
+    index="source",
+    columns="target",
+    values="median_delta"
+    )
+
+    if matrix.empty:
+
+        fig = go.Figure()
+
+        fig.add_annotation(
+            text="No cell-cell differences available",
+            x=0.5,
+            y=0.5,
+            xref="paper",
+            yref="paper",
+            showarrow=False
+        )
+
+        return fig
+
+    # ------------------------------------------------------------
+    # Order by strongest changes
+    # ------------------------------------------------------------
+
+    row_order = (
+        matrix
+        .abs()
+        .max(axis=1)
+        .sort_values(
+            ascending=False
+        )
+        .index
+    )
+
+    col_order = (
+        matrix
+        .abs()
+        .max(axis=0)
+        .sort_values(
+            ascending=False
+        )
+        .index
+    )
+
+    matrix = matrix.loc[
+        row_order,
+        col_order
+    ]
+    
+    # Convert missing heatmap combinations to JSON-safe None
+    z_values = matrix.astype(object).where(
+        pd.notna(matrix),
+        None
+    ).values
+
+    # ------------------------------------------------------------
+    # Symmetric scale around zero
+    # ------------------------------------------------------------
+
+    values = matrix.values.astype(float)
+
+    if np.all(np.isnan(values)):
+        max_abs = 1
+    else:
+        max_abs = np.nanmax(
+            np.abs(values)
+        )
+
+    if (
+        not np.isfinite(max_abs)
+        or max_abs == 0
+    ):
+        max_abs = 1
+
+    # ------------------------------------------------------------
+    # Heatmap
+    # ------------------------------------------------------------
+
+    fig = go.Figure(
+        data=go.Heatmap(
+            z=z_values,
+
+            x=matrix.columns,
+            y=matrix.index,
+
+            colorscale="RdBu_r",
+
+            zmid=0,
+            zmin=-max_abs,
+            zmax=max_abs,
+
+            colorbar=dict(
+                title=f"Median Δ{metric}"
+            ),
+
+            hovertemplate=(
+                "Source: %{y}<br>"
+                "Target: %{x}<br>"
+                f"Median Δ{metric}: "
+                "%{z:.3f}"
+                "<extra></extra>"
+            )
+        )
+    )
+
+    fig.update_layout(
+        title=(
+            f"Cell–Cell Communication Changes: "
+            f"{condition_a} vs {condition_b}"
+        ),
+
+        xaxis_title="Target Cell Type",
+        yaxis_title="Source Cell Type",
+
+        height=max(
+            600,
+            len(matrix.index) * 20
+        ),
+
+        margin=dict(
+            l=200,
+            r=120,
+            t=80,
+            b=200
+        )
+    )
+
+    fig.update_xaxes(
+        tickangle=90
+    )
+
+    fig.add_annotation(
+        text=(
+            f"Positive = higher {metric} in {condition_a}; "
+            f"negative = higher in {condition_b}"
+        ),
+
+        xref="paper",
+        yref="paper",
+
+        x=0,
+        y=-0.20,
+
+        xanchor="left",
+
+        showarrow=False,
+
+        font=dict(size=11)
+    )
+
+    return fig
+
+def create_lr_difference_barplot(
+    df_a: pd.DataFrame,
+    df_b: pd.DataFrame,
+    condition_a: str,
+    condition_b: str,
+    metric: str = "lrscore",
+    top_n: Optional[int] = None
+) -> go.Figure:
+    """
+    Compare ligand-receptor communication between two conditions.
+
+    For every matched source-target-LR interaction:
+        delta = metric(A) - metric(B)
+
+    Then aggregate across all cell-type contexts for each
+    ligand-receptor pair.
+
+    Bar value:
+        median delta across cell-type contexts
+    """
+
+    matched = create_matched_condition_difference(
+        df_a,
+        df_b,
+        metric=metric
+    )
+
+    if matched.empty:
+
+        fig = go.Figure()
+
+        fig.add_annotation(
+            text="No matched interactions available",
+            x=0.5,
+            y=0.5,
+            xref="paper",
+            yref="paper",
+            showarrow=False
+        )
+
+        return fig
+
+    delta_col = f"delta_{metric}"
+
+    # ------------------------------------------------------------
+    # Cell context label
+    # ------------------------------------------------------------
+
+    matched["cell_context"] = (
+        matched["source"].astype(str)
+        + " → "
+        + matched["target"].astype(str)
+    )
+
+    # ------------------------------------------------------------
+    # Aggregate across cell-type contexts
+    # ------------------------------------------------------------
+
+    summary = (
+        matched
+        .groupby(
+            [
+                "ligand_complex",
+                "receptor_complex"
+            ]
+        )
+        .agg(
+            median_delta=(
+                delta_col,
+                "median"
+            ),
+
+            cell_contexts=(
+                "cell_context",
+                "nunique"
+            ),
+
+            matched_interactions=(
+                delta_col,
+                "size"
+            )
+        )
+        .reset_index()
+    )
+    
+    # Remove non-finite derived values before plotting
+    summary = summary.replace(
+        [np.inf, -np.inf],
+        np.nan
+    )
+
+    summary = summary.dropna(
+        subset=["median_delta"]
+    )
+
+    summary["lr_pair"] = (
+        summary["ligand_complex"].astype(str)
+        + " → "
+        + summary["receptor_complex"].astype(str)
+    )
+
+    summary["abs_change"] = (
+        summary["median_delta"].abs()
+    )
+
+    # ------------------------------------------------------------
+    # Top N = most changed LR pairs
+    # ------------------------------------------------------------
+
+    if top_n is not None and top_n > 0:
+
+        summary = (
+            summary
+            .sort_values(
+                "abs_change",
+                ascending=False
+            )
+            .head(top_n)
+        )
+
+    # ------------------------------------------------------------
+    # Sort negative → positive for display
+    # ------------------------------------------------------------
+
+    summary = summary.sort_values(
+        "median_delta",
+        ascending=True
+    )
+
+    # ------------------------------------------------------------
+    # Plot
+    # ------------------------------------------------------------
+
+    customdata = np.stack(
+        [
+            summary["cell_contexts"],
+            summary["matched_interactions"]
+        ],
+        axis=-1
+    )
+
+    fig = go.Figure(
+        go.Bar(
+            x=summary["median_delta"],
+            y=summary["lr_pair"],
+
+            orientation="h",
+
+            customdata=customdata,
+
+            hovertemplate=(
+                "<b>%{y}</b><br>"
+                f"Median Δ{metric}: "
+                "%{x:.3f}<br>"
+                "Cell-type contexts: "
+                "%{customdata[0]}<br>"
+                "Matched interactions: "
+                "%{customdata[1]}"
+                "<extra></extra>"
+            )
+        )
+    )
+
+    fig.add_vline(
+        x=0,
+        line_dash="dash"
+    )
+
+    fig.update_layout(
+        title=(
+            f"Ligand–Receptor Changes: "
+            f"{condition_a} vs {condition_b}"
+        ),
+
+        xaxis_title=(
+            f"Median Δ{metric} "
+            f"({condition_a} − {condition_b})"
+        ),
+
+        yaxis_title="Ligand → Receptor",
+
+        height=max(
+            600,
+            len(summary) * 24
+        ),
+
+        margin=dict(
+            l=260,
+            r=80,
+            t=80,
+            b=70
+        )
+    )
+
+    return fig

@@ -307,23 +307,175 @@ def create_summary_tab() -> ui.TagChild:
     )
 
 def create_data_explorer_tab() -> ui.TagChild:
-    """Create the data structure explorer tab."""
+    """Create the main overview / data explorer tab."""
+
     return ui.nav_panel(
-        "🗂️ Data Explorer",
+        "📊 Overview",
         ui.div(
             ui.div(
+
+                # ============================================================
+                # DATA STRUCTURE
+                # ============================================================
+
                 ui.h4("Discovered Analysis Types"),
                 ui.output_data_frame("splitting_keys_table"),
-                ui.br(),
+
+                ui.hr(),
+
+                # ============================================================
+                # EXISTING PLOT: RAW INTERACTION COUNTS
+                # ============================================================
+
                 ui.h4("Number of Interactions per Dataset"),
+
                 ui.p(
-                    "Raw number of LIANA result rows loaded for each dataset/contrast.",
+                    "Raw number of LIANA result rows loaded for each dataset / condition.",
                     class_="text-muted"
                 ),
+
                 output_widget("structure_overview_plot"),
+
+                ui.hr(),
+
+                # ============================================================
+                # PLOT 1
+                # ============================================================
+
+                ui.h4("Interaction Landscape Across Conditions"),
+
+                ui.p(
+                    "Top ligand–receptor interactions across all conditions, "
+                    "ranked globally by magnitude.",
+                    class_="text-muted"
+                ),
+
+                ui.input_numeric(
+                    "overview_interaction_top_n",
+                    "Top N interactions:",
+                    value=50,
+                    min=10,
+                    max=200,
+                    step=10
+                ),
+                
+                ui.input_checkbox(
+                    "overview_apply_filters",
+                    "Apply sidebar filters",
+                    value=False
+                ),
+
+                ui.output_ui("overview_condition_dotplot_container"),
+
+                ui.hr(),
+
+                # ============================================================
+                # SHARED CONDITION COMPARISON FOR PLOTS 2 + 3
+                # ============================================================
+
+                ui.h4("Condition Differences"),
+
+                ui.p(
+                    "Select the two conditions used for the differential "
+                    "cell-cell and ligand–receptor summaries below.",
+                    class_="text-muted"
+                ),
+
+                ui.input_select(
+                    "overview_condition_comparison",
+                    "Compare conditions:",
+                    choices={}
+                ),
+
+                ui.hr(),
+
+                # ============================================================
+                # PLOT 2
+                # ============================================================
+
+                ui.h4("1. Cell–Cell Communication Changes"),
+
+                ui.p(
+                    "Difference in LRscore between conditions, aggregated across "
+                    "matched ligand–receptor interactions for each source → target pair.",
+                    class_="text-muted"
+                ),
+
+                ui.input_radio_buttons(
+                    "overview_cell_mode",
+                    "Interactions to include:",
+                    choices={
+                        "all": "All matched interactions",
+                        "filtered": "Apply sidebar filters",
+                        "top": "Top N most changed cell pairs"
+                    },
+                    selected="top",
+                    inline=True
+                ),
+
+                ui.panel_conditional(
+                    "input.overview_cell_mode === 'top'",
+
+                    ui.input_numeric(
+                        "overview_cell_top_n",
+                        "Top N cell pairs:",
+                        value=30,
+                        min=10,
+                        max=1000,
+                        step=10
+                    )
+                ),
+
+                ui.output_ui("overview_cell_difference_plot_container"),
+
+                ui.hr(),
+
+                # ============================================================
+                # PLOT 3
+                # ============================================================
+
+                ui.h4("2. Ligand–Receptor Changes"),
+
+                ui.p(
+                    "Difference in LRscore between conditions, aggregated across "
+                    "all matched source → target cell-type contexts.",
+                    class_="text-muted"
+                ),
+
+                ui.input_radio_buttons(
+                    "overview_lr_diff_mode",
+                    "Interactions to include:",
+                    choices={
+                        "all": "All matched interactions",
+                        "filtered": "Apply sidebar filters",
+                        "top": "Top N most changed LR pairs"
+                    },
+                    selected="top",
+                    inline=True
+                ),
+
+                ui.panel_conditional(
+                    "input.overview_lr_diff_mode === 'top'",
+
+                    ui.input_numeric(
+                        "overview_lr_diff_top_n",
+                        "Top N LR pairs:",
+                        value=30,
+                        min=10,
+                        max=1000,
+                        step=10
+                    )
+                ),
+
+                ui.output_ui("overview_lr_difference_plot_container"),
+
+                ui.br(),
+                ui.br(),
+
                 class_="mb-3"
             ),
-            style="height: 900px; overflow-y: auto; overflow-x: hidden;"
+
+            style="padding-right: 10px;"
         )
     )
 

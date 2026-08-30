@@ -6,17 +6,27 @@ Contains all server-side reactive logic and event handlers.
 
 import pandas as pd
 import asyncio
+import plotly.graph_objects as go
 from shiny import Inputs, Outputs, Session, render, reactive, ui
-from shinywidgets import render_plotly
+from shinywidgets import render_plotly, output_widget
 from typing import Dict, List, Optional
 import logging
 
 from .data_handler import DataHandler
 from .visualizations import (
-    create_network_plot, create_cell_count_network_plot,
-    create_heatmap_plot, create_dotplot, 
-    create_scatter_comparison, create_volcano_plot, create_summary_barplot,
-    create_structure_overview_plot
+    create_network_plot,
+    create_cell_count_network_plot,
+    create_heatmap_plot,
+    create_dotplot,
+    create_scatter_comparison,
+    create_volcano_plot,
+    create_summary_barplot,
+    create_structure_overview_plot,
+
+    # Overview plots
+    create_global_condition_dotplot,
+    create_cell_pair_difference_heatmap,
+    create_lr_difference_barplot
 )
 from .utils import (
     validate_input_parameters, calculate_interaction_stats,
@@ -144,6 +154,7 @@ def create_server_function(data_handler: DataHandler):
             load_splitting_key_task(splitting_key, data_discovered)
         
         @reactive.effect
+        @reactive.event(load_splitting_key_task.result)
         def handle_load_splitting_key_result():
             """Handle the result of the load splitting key task."""
             if load_splitting_key_task.result() is not None:
@@ -173,7 +184,107 @@ def create_server_function(data_handler: DataHandler):
                     ui.update_select("comparison_target", choices=data_handler.cell_types,
                                    selected=data_handler.cell_types[1] if len(data_handler.cell_types) > 1 else None)
                     
-                    
+                    # =====================================================
+                    # Overview: condition comparison choices
+                    # =====================================================
+
+                    available_conditions = [
+                        c
+                        for c in conditions
+                        if c != "full"
+                    ]
+
+                    comparison_choices = {}
+
+                    # Preferred IBD comparisons first
+                    preferred_pairs = [
+                        ("CD", "HC"),
+                        ("UC", "HC"),
+                        ("CD", "UC")
+                    ]
+
+                    used_pairs = set()
+
+                    for condition_a, condition_b in preferred_pairs:
+
+                        if (
+                            condition_a in available_conditions
+                            and condition_b in available_conditions
+                        ):
+
+                            key = (
+                                f"{condition_a}"
+                                f"|||"
+                                f"{condition_b}"
+                            )
+
+                            comparison_choices[key] = (
+                                f"{condition_a} vs "
+                                f"{condition_b}"
+                            )
+
+                            used_pairs.add(
+                                frozenset(
+                                    [
+                                        condition_a,
+                                        condition_b
+                                    ]
+                                )
+                            )
+
+                    # Also support any other condition combinations
+                    for i in range(
+                        len(available_conditions)
+                    ):
+
+                        for j in range(
+                            i + 1,
+                            len(available_conditions)
+                        ):
+
+                            condition_a = (
+                                available_conditions[i]
+                            )
+
+                            condition_b = (
+                                available_conditions[j]
+                            )
+
+                            pair_key = frozenset(
+                                [
+                                    condition_a,
+                                    condition_b
+                                ]
+                            )
+
+                            if pair_key in used_pairs:
+                                continue
+
+                            key = (
+                                f"{condition_a}"
+                                f"|||"
+                                f"{condition_b}"
+                            )
+
+                            comparison_choices[key] = (
+                                f"{condition_a} vs "
+                                f"{condition_b}"
+                            )
+
+                    if comparison_choices:
+
+                        first_choice = next(
+                            iter(
+                                comparison_choices
+                            )
+                        )
+
+                        ui.update_select(
+                            "overview_condition_comparison",
+                            choices=comparison_choices,
+                            selected=first_choice
+                        )
+                        
                     # Count rows per loaded dataset/contrast
                     counts_for_plot = {
                         name: int(len(df)) if df is not None else 0
@@ -278,6 +389,112 @@ def create_server_function(data_handler: DataHandler):
             )
 
             return filtered_df
+        
+        def get_overview_condition_results(
+            use_sidebar_filters=False
+        ):
+            """
+            Return condition -> DataFrame for the Overview plots.
+
+            Excludes the pooled 'full' dataset.
+
+            If use_sidebar_filters=True, the current sidebar filters
+            are applied independently to each condition.
+            """
+
+            overview_results = {}
+
+            for condition, df in data_handler.results.items():
+
+                if condition == "full":
+                    continue
+
+                if df is None or df.empty:
+                    continue
+
+                if use_sidebar_filters:
+                    current_df = df.copy()
+                else:
+                    current_df = df
+
+                if use_sidebar_filters:
+
+                    current_df = data_handler.filter_interactions(
+                        current_df,
+
+                        logfc_threshold=(
+                            input.logfc_threshold()
+                            if input.logfc_threshold() is not None
+                            else 0.0
+                        ),
+
+                        lrscore_threshold=(
+                            input.lrscore_threshold()
+                            if input.lrscore_threshold() is not None
+                            else 0.0
+                        ),
+
+                        specificity_threshold=(
+                            input.specificity_threshold()
+                            if input.specificity_threshold() is not None
+                            else 1.0
+                        ),
+
+                        min_source_cells=(
+                            input.min_source_cells()
+                            if input.min_source_cells() is not None
+                            else 0
+                        ),
+
+                        min_target_cells=(
+                            input.min_target_cells()
+                            if input.min_target_cells() is not None
+                            else 0
+                        ),
+
+                        source_types=(
+                            input.source_types()
+                            or None
+                        ),
+
+                        target_types=(
+                            input.target_types()
+                            or None
+                        )
+                    )
+
+                overview_results[
+                    condition
+                ] = current_df
+
+            return overview_results
+        
+        def get_selected_overview_conditions():
+            """
+            Read selected condition comparison.
+
+            Stored format:
+                conditionA|||conditionB
+            """
+
+            comparison = (
+                input.overview_condition_comparison()
+            )
+
+            if (
+                not comparison
+                or "|||" not in comparison
+            ):
+                return None, None
+
+            condition_a, condition_b = (
+                comparison.split(
+                    "|||",
+                    1
+                )
+            )
+
+            return condition_a, condition_b
         
         @output
         @render_plotly
@@ -687,5 +904,236 @@ def create_server_function(data_handler: DataHandler):
             count_df = count_df.sort_values("order").drop(columns="order")
 
             return create_structure_overview_plot(count_df)
+        
+        
+        @output
+        @render_plotly
+        def overview_condition_dotplot():
+            """
+            Plot 1:
+            global Top N condition interaction landscape.
+
+            Top N = LIANA consensus magnitude_rank
+            Dot size = LRscore
+            Dot color = specificity_rank
+            """
+
+            # Reactive dependency that changes after datasets finish loading
+            counts = interaction_counts_state.get()
+
+            if not counts:
+                fig = go.Figure()
+                fig.add_annotation(
+                    text="Loading condition data...",
+                    x=0.5,
+                    y=0.5,
+                    xref="paper",
+                    yref="paper",
+                    showarrow=False
+                )
+                return fig
+
+            # Checkbox controls whether sidebar filters are applied
+            apply_filters = input.overview_apply_filters()
+
+            condition_results = get_overview_condition_results(
+                use_sidebar_filters=apply_filters
+            )
+
+            top_n = input.overview_interaction_top_n()
+
+            logger.info(
+                f"Rendering overview condition plot: "
+                f"top_n={top_n}, "
+                f"conditions={[(k, len(v)) for k, v in condition_results.items()]}"
+            )
+
+            return create_global_condition_dotplot(
+                condition_results,
+                top_n=top_n
+            )
+            
+        @output
+        @render_plotly
+        def overview_cell_difference_plot():
+            """
+            Plot 2:
+            cell-cell communication differences.
+            """
+
+            (
+                condition_a,
+                condition_b
+            ) = get_selected_overview_conditions()
+
+            if (
+                not condition_a
+                or not condition_b
+            ):
+                return go.Figure()
+
+            mode = (
+                input.overview_cell_mode()
+            )
+
+            use_filters = (
+                mode == "filtered"
+            )
+
+            condition_results = (
+                get_overview_condition_results(
+                    use_sidebar_filters=use_filters
+                )
+            )
+
+            if (
+                condition_a
+                not in condition_results
+                or condition_b
+                not in condition_results
+            ):
+                return go.Figure()
+
+            top_n = None
+
+            if mode == "top":
+
+                top_n = (
+                    input.overview_cell_top_n()
+                )
+
+            return (
+                create_cell_pair_difference_heatmap(
+
+                    condition_results[
+                        condition_a
+                    ],
+
+                    condition_results[
+                        condition_b
+                    ],
+
+                    condition_a=condition_a,
+                    condition_b=condition_b,
+
+                    metric="lrscore",
+
+                    top_n=top_n
+                )
+            )
+        @output
+        @render_plotly
+        def overview_lr_difference_plot():
+            """
+            Plot 3:
+            ligand-receptor differences aggregated across
+            cell-type contexts.
+            """
+
+            (
+                condition_a,
+                condition_b
+            ) = get_selected_overview_conditions()
+
+            if (
+                not condition_a
+                or not condition_b
+            ):
+                return go.Figure()
+
+            mode = (
+                input.overview_lr_diff_mode()
+            )
+
+            use_filters = (
+                mode == "filtered"
+            )
+
+            condition_results = (
+                get_overview_condition_results(
+                    use_sidebar_filters=use_filters
+                )
+            )
+
+            if (
+                condition_a
+                not in condition_results
+                or condition_b
+                not in condition_results
+            ):
+                return go.Figure()
+
+            top_n = None
+
+            if mode == "top":
+
+                top_n = (
+                    input.overview_lr_diff_top_n()
+                )
+
+            return create_lr_difference_barplot(
+
+                condition_results[
+                    condition_a
+                ],
+
+                condition_results[
+                    condition_b
+                ],
+
+                condition_a=condition_a,
+                condition_b=condition_b,
+
+                metric="lrscore",
+
+                top_n=top_n
+            )
+            
+        @output
+        @render.ui
+        def overview_condition_dotplot_container():
+
+            top_n = input.overview_interaction_top_n() or 50
+
+            plot_height = max(
+                600,
+                top_n * 24
+            )
+
+            return output_widget(
+                "overview_condition_dotplot",
+                height=f"{plot_height}px"
+            )
+
+
+        @output
+        @render.ui
+        def overview_cell_difference_plot_container():
+
+            return output_widget(
+                "overview_cell_difference_plot",
+                height="900px"
+            )
+
+
+        @output
+        @render.ui
+        def overview_lr_difference_plot_container():
+
+            mode = input.overview_lr_diff_mode()
+
+            if mode == "top":
+                top_n = input.overview_lr_diff_top_n() or 30
+                plot_height = max(
+                    600,
+                    top_n * 24
+                )
+            else:
+                plot_height = 1200
+
+            return output_widget(
+                "overview_lr_difference_plot",
+                height=f"{plot_height}px"
+            )
                 
     return server
