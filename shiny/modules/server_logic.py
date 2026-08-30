@@ -18,7 +18,7 @@ from .visualizations import (
     create_cell_count_network_plot,
     create_heatmap_plot,
     create_dotplot,
-    create_scatter_comparison,
+    create_lr_boxplot,
     create_volcano_plot,
     create_summary_barplot,
     create_structure_overview_plot,
@@ -179,10 +179,6 @@ def create_server_function(data_handler: DataHandler):
                     
                     ui.update_selectize("source_types", choices=data_handler.cell_types)
                     ui.update_selectize("target_types", choices=data_handler.cell_types)
-                    ui.update_select("comparison_source", choices=data_handler.cell_types, 
-                                   selected=data_handler.cell_types[0] if data_handler.cell_types else None)
-                    ui.update_select("comparison_target", choices=data_handler.cell_types,
-                                   selected=data_handler.cell_types[1] if len(data_handler.cell_types) > 1 else None)
                     
                     # =====================================================
                     # Overview: condition comparison choices
@@ -545,6 +541,32 @@ def create_server_function(data_handler: DataHandler):
         
         @output
         @render_plotly
+        def lr_boxplot():
+            """Render ligand-receptor metric distributions."""
+
+            df = get_filtered_data()
+
+            if df.empty:
+                return go.Figure()
+
+            metric = (
+                input.lr_boxplot_metric()
+                or "lrscore"
+            )
+
+            top_n = (
+                input.lr_boxplot_top_n()
+                or 20
+            )
+
+            return create_lr_boxplot(
+                df,
+                metric=metric,
+                top_n=top_n
+            )
+            
+        @output
+        @render_plotly
         def comparison_plot():
             """Render comparison plot."""
             source_cell = input.comparison_source()
@@ -785,10 +807,6 @@ def create_server_function(data_handler: DataHandler):
                 # Update sidebar with available cell types and conditions
                 ui.update_selectize("source_types", choices=data_handler.cell_types)
                 ui.update_selectize("target_types", choices=data_handler.cell_types)
-                ui.update_select("comparison_source", choices=data_handler.cell_types,
-                                 selected=(data_handler.cell_types[0] if data_handler.cell_types else None))
-                ui.update_select("comparison_target", choices=data_handler.cell_types,
-                                 selected=(data_handler.cell_types[1] if len(data_handler.cell_types) > 1 else None))
                 
                 # Update contrast choices based on current splitting key
                 current_splitting_key = app_state.get().get('current_splitting_key')

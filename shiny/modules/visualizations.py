@@ -748,6 +748,221 @@ def create_dotplot(df: pd.DataFrame,
             x=0.5, y=0.5, showarrow=False
         )
         return fig
+    
+def create_lr_boxplot(
+    df: pd.DataFrame,
+    metric: str = "lrscore",
+    top_n: int = 20
+) -> go.Figure:
+    """
+    Show the distribution of a selected LIANA metric for
+    ligand-receptor pairs across source-target cell-type contexts.
+
+    Each box = one ligand-receptor pair.
+    Each observation = one source-target context.
+
+    Top N LR pairs are selected using the median selected metric.
+    For rank metrics, lower values are better.
+    For score metrics, higher values are better.
+    """
+
+    if df is None or df.empty:
+
+        fig = go.Figure()
+
+        fig.add_annotation(
+            text="No data available for ligand-receptor distributions",
+            x=0.5,
+            y=0.5,
+            xref="paper",
+            yref="paper",
+            showarrow=False
+        )
+
+        return fig
+
+    required = {
+        "ligand_complex",
+        "receptor_complex",
+        metric
+    }
+
+    if not required.issubset(df.columns):
+
+        fig = go.Figure()
+
+        fig.add_annotation(
+            text=f"Required metric '{metric}' not available",
+            x=0.5,
+            y=0.5,
+            xref="paper",
+            yref="paper",
+            showarrow=False
+        )
+
+        return fig
+
+    plot_df = df[
+        [
+            "ligand_complex",
+            "receptor_complex",
+            "source",
+            "target",
+            metric
+        ]
+    ].copy()
+
+    # ------------------------------------------------------------
+    # Make values Plotly-safe
+    # ------------------------------------------------------------
+
+    plot_df[metric] = pd.to_numeric(
+        plot_df[metric],
+        errors="coerce"
+    )
+
+    plot_df = plot_df.replace(
+        [np.inf, -np.inf],
+        np.nan
+    )
+
+    plot_df = plot_df.dropna(
+        subset=[metric]
+    )
+
+    if plot_df.empty:
+        return go.Figure()
+
+    # ------------------------------------------------------------
+    # LR pair label
+    # ------------------------------------------------------------
+
+    plot_df["lr_pair"] = (
+        plot_df["ligand_complex"].astype(str)
+        + " → "
+        + plot_df["receptor_complex"].astype(str)
+    )
+
+    plot_df["cell_context"] = (
+        plot_df["source"].astype(str)
+        + " → "
+        + plot_df["target"].astype(str)
+    )
+
+    # ------------------------------------------------------------
+    # Rank LR pairs by median selected metric
+    # ------------------------------------------------------------
+
+    ranking = (
+        plot_df
+        .groupby("lr_pair")[metric]
+        .median()
+    )
+
+    rank_metrics = {
+        "specificity_rank",
+        "magnitude_rank"
+    }
+
+    if metric in rank_metrics:
+
+        ranking = ranking.sort_values(
+            ascending=True
+        )
+
+    else:
+
+        ranking = ranking.sort_values(
+            ascending=False
+        )
+
+    selected_pairs = (
+        ranking
+        .head(top_n)
+        .index
+    )
+
+    plot_df = plot_df[
+        plot_df["lr_pair"].isin(
+            selected_pairs
+        )
+    ].copy()
+
+    # ------------------------------------------------------------
+    # Display ordering
+    #
+    # Reverse because horizontal boxplots are drawn bottom -> top
+    # ------------------------------------------------------------
+
+    pair_order = list(
+        reversed(
+            selected_pairs.tolist()
+        )
+    )
+
+    # ------------------------------------------------------------
+    # Plot
+    # ------------------------------------------------------------
+
+    fig = px.box(
+        plot_df,
+
+        x=metric,
+        y="lr_pair",
+
+        category_orders={
+            "lr_pair": pair_order
+        },
+
+        points="outliers",
+
+        hover_data={
+            "ligand_complex": True,
+            "receptor_complex": True,
+            "source": True,
+            "target": True,
+            "cell_context": True
+        }
+    )
+
+    metric_labels = {
+        "lrscore": "LRscore",
+        "lr_means": "LR Means",
+        "lr_logfc": "LogFC Specificity Score",
+        "specificity_rank": "Consensus Specificity Rank",
+        "magnitude_rank": "Consensus Magnitude Rank"
+    }
+
+    metric_label = metric_labels.get(
+        metric,
+        metric
+    )
+
+    fig.update_layout(
+        title=(
+            f"Top {len(selected_pairs)} Ligand–Receptor "
+            f"Pairs by Median {metric_label}"
+        ),
+
+        xaxis_title=metric_label,
+        yaxis_title="Ligand → Receptor",
+
+        height=max(
+            600,
+            len(selected_pairs) * 32
+        ),
+
+        margin=dict(
+            l=260,
+            r=70,
+            t=80,
+            b=70
+        ),
+
+        showlegend=False
+    )
+
+    return fig
 
 def create_scatter_comparison(results_dict: Dict, 
                             source_cell: str, 

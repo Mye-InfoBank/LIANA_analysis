@@ -178,10 +178,25 @@ def create_heatmap_tab() -> ui.TagChild:
     )
 
 def create_dotplot_tab() -> ui.TagChild:
-    """Create the dot plot visualization tab."""
+    """Create the ligand-receptor interaction tab."""
+
     return ui.nav_panel(
-        "🎯 Dot Plot", 
+        "🔗 Ligand–Receptor Interactions",
+
         ui.div(
+
+            # ============================================================
+            # EXISTING DOTPLOT
+            # ============================================================
+
+            ui.h4("Top Ligand–Receptor Interactions"),
+
+            ui.p(
+                "Detailed view of top individual ligand–receptor interactions "
+                "within the selected contrast and current sidebar filters.",
+                class_="text-muted"
+            ),
+
             ui.div(
                 ui.input_slider(
                     "top_n_interactions",
@@ -191,16 +206,71 @@ def create_dotplot_tab() -> ui.TagChild:
                     value=20,
                     step=5
                 ),
-                ui.input_radio_buttons("dotplot_color", "Color By:",
-                                     choices={
-                                         "magnitude_rank": "Magnitude Rank",
-                                         "specificity_rank": "Specificity Rank",
-                                         "lrscore": "LRscore"
-                                     }, selected="specificity_rank", inline=True),
+
+                ui.input_radio_buttons(
+                    "dotplot_color",
+                    "Color By:",
+                    choices={
+                        "magnitude_rank": "Magnitude Rank",
+                        "specificity_rank": "Specificity Rank",
+                        "lrscore": "LRscore"
+                    },
+                    selected="specificity_rank",
+                    inline=True
+                ),
+
                 class_="mb-3"
             ),
+
             output_widget("dotplot"),
-            style="height: 700px;"
+
+            ui.hr(),
+
+            # ============================================================
+            # NEW BOXPLOT
+            # ============================================================
+
+            ui.h4("Ligand–Receptor Score Distributions"),
+
+            ui.p(
+                "Each box summarizes one ligand–receptor pair across all "
+                "source → target cell-type contexts in the selected contrast.",
+                class_="text-muted"
+            ),
+
+            ui.div(
+
+                ui.input_select(
+                    "lr_boxplot_metric",
+                    "Metric:",
+                    choices={
+                        "lrscore": "LRscore",
+                        "lr_means": "LR Means",
+                        "lr_logfc": "LogFC Specificity Score",
+                        "specificity_rank": "Consensus Specificity Rank",
+                        "magnitude_rank": "Consensus Magnitude Rank"
+                    },
+                    selected="lrscore"
+                ),
+
+                ui.input_numeric(
+                    "lr_boxplot_top_n",
+                    "Top N Ligand–Receptor Pairs:",
+                    value=20,
+                    min=5,
+                    max=100,
+                    step=5
+                ),
+
+                class_="mb-3 p-2 border rounded"
+            ),
+
+            output_widget("lr_boxplot"),
+
+            ui.br(),
+            ui.br(),
+
+            style="padding-right: 10px;"
         )
     )
 
@@ -501,7 +571,6 @@ def create_main_content() -> ui.TagChild:
                 create_network_tab(),
                 create_heatmap_tab(),
                 create_dotplot_tab(),
-                create_comparison_tab(),
                 create_data_table_tab(),
                 create_summary_tab()
             ),
