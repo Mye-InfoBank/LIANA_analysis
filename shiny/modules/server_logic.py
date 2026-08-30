@@ -959,6 +959,10 @@ def create_server_function(data_handler: DataHandler):
             """
             Plot 2:
             cell-cell communication differences.
+
+            Metric options:
+                lrscore
+                interaction_count
             """
 
             (
@@ -972,9 +976,7 @@ def create_server_function(data_handler: DataHandler):
             ):
                 return go.Figure()
 
-            mode = (
-                input.overview_cell_mode()
-            )
+            mode = input.overview_cell_mode()
 
             use_filters = (
                 mode == "filtered"
@@ -987,47 +989,52 @@ def create_server_function(data_handler: DataHandler):
             )
 
             if (
-                condition_a
-                not in condition_results
-                or condition_b
-                not in condition_results
+                condition_a not in condition_results
+                or condition_b not in condition_results
             ):
                 return go.Figure()
+
+            metric = (
+                input.overview_cell_metric()
+                or "lrscore"
+            )
 
             top_n = None
 
             if mode == "top":
-
                 top_n = (
                     input.overview_cell_top_n()
                 )
 
-            return (
-                create_cell_pair_difference_heatmap(
+            return create_cell_pair_difference_heatmap(
 
-                    condition_results[
-                        condition_a
-                    ],
+                condition_results[
+                    condition_a
+                ],
 
-                    condition_results[
-                        condition_b
-                    ],
+                condition_results[
+                    condition_b
+                ],
 
-                    condition_a=condition_a,
-                    condition_b=condition_b,
+                condition_a=condition_a,
+                condition_b=condition_b,
 
-                    metric="lrscore",
+                metric=metric,
 
-                    top_n=top_n
-                )
+                top_n=top_n
             )
         @output
         @render_plotly
         def overview_lr_difference_plot():
             """
             Plot 3:
-            ligand-receptor differences aggregated across
-            cell-type contexts.
+            Top N ligand-receptor differences.
+
+            Metric options:
+                lrscore
+                interaction_count
+
+            Sidebar filtering is independent from Top N.
             """
 
             (
@@ -1041,12 +1048,10 @@ def create_server_function(data_handler: DataHandler):
             ):
                 return go.Figure()
 
-            mode = (
-                input.overview_lr_diff_mode()
-            )
-
+            # Independent checkbox:
+            # Top N is ALWAYS applied.
             use_filters = (
-                mode == "filtered"
+                input.overview_lr_diff_apply_filters()
             )
 
             condition_results = (
@@ -1056,20 +1061,20 @@ def create_server_function(data_handler: DataHandler):
             )
 
             if (
-                condition_a
-                not in condition_results
-                or condition_b
-                not in condition_results
+                condition_a not in condition_results
+                or condition_b not in condition_results
             ):
                 return go.Figure()
 
-            top_n = None
+            metric = (
+                input.overview_lr_diff_metric()
+                or "lrscore"
+            )
 
-            if mode == "top":
-
-                top_n = (
-                    input.overview_lr_diff_top_n()
-                )
+            top_n = (
+                input.overview_lr_diff_top_n()
+                or 30
+            )
 
             return create_lr_difference_barplot(
 
@@ -1084,7 +1089,7 @@ def create_server_function(data_handler: DataHandler):
                 condition_a=condition_a,
                 condition_b=condition_b,
 
-                metric="lrscore",
+                metric=metric,
 
                 top_n=top_n
             )
@@ -1120,16 +1125,15 @@ def create_server_function(data_handler: DataHandler):
         @render.ui
         def overview_lr_difference_plot_container():
 
-            mode = input.overview_lr_diff_mode()
+            top_n = (
+                input.overview_lr_diff_top_n()
+                or 30
+            )
 
-            if mode == "top":
-                top_n = input.overview_lr_diff_top_n() or 30
-                plot_height = max(
-                    600,
-                    top_n * 24
-                )
-            else:
-                plot_height = 1200
+            plot_height = max(
+                600,
+                top_n * 24
+            )
 
             return output_widget(
                 "overview_lr_difference_plot",

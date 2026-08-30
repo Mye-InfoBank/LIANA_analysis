@@ -1444,28 +1444,208 @@ def create_cell_pair_difference_heatmap(
     """
     Compare cell-cell communication between two conditions.
 
-    For each matched LR interaction:
-        delta = metric(A) - metric(B)
+    metric == "lrscore":
+        Match identical source-target-LR interactions.
+        Calculate LRscore(A) - LRscore(B).
+        Aggregate by source-target using median delta.
 
-    Then aggregate those deltas by:
-        source + target
+    metric == "interaction_count":
+        Count unique ligand-receptor pairs independently for
+        every source-target pair in each condition.
+        Calculate count(A) - count(B).
 
-    Heatmap value:
-        median delta across matched LR interactions
+    Positive values = higher/more in condition A.
+    Negative values = higher/more in condition B.
     """
 
-    matched = create_matched_condition_difference(
-        df_a,
-        df_b,
-        metric=metric
-    )
+    # ============================================================
+    # LRscore difference
+    # ============================================================
 
-    if matched.empty:
+    if metric == "lrscore":
+
+        matched = create_matched_condition_difference(
+            df_a,
+            df_b,
+            metric="lrscore"
+        )
+
+        if matched.empty:
+
+            fig = go.Figure()
+
+            fig.add_annotation(
+                text="No matched interactions available",
+                x=0.5,
+                y=0.5,
+                xref="paper",
+                yref="paper",
+                showarrow=False
+            )
+
+            return fig
+
+        delta_col = "delta_lrscore"
+
+        summary = (
+            matched
+            .groupby(
+                ["source", "target"]
+            )
+            .agg(
+                plot_value=(
+                    delta_col,
+                    "median"
+                ),
+
+                matched_lr_interactions=(
+                    delta_col,
+                    "size"
+                )
+            )
+            .reset_index()
+        )
+
+        colorbar_title = "Median ΔLRscore"
+
+        hover_value = (
+            "Median ΔLRscore: %{z:.3f}"
+        )
+
+        annotation_text = (
+            f"Positive = higher LRscore in {condition_a}; "
+            f"negative = higher in {condition_b}"
+        )
+
+    # ============================================================
+    # Interaction-count difference
+    # ============================================================
+
+    elif metric == "interaction_count":
+
+        required = {
+            "source",
+            "target",
+            "ligand_complex",
+            "receptor_complex"
+        }
+
+        if (
+            df_a is None
+            or df_b is None
+            or df_a.empty
+            or df_b.empty
+            or not required.issubset(df_a.columns)
+            or not required.issubset(df_b.columns)
+        ):
+
+            fig = go.Figure()
+
+            fig.add_annotation(
+                text="No interaction-count data available",
+                x=0.5,
+                y=0.5,
+                xref="paper",
+                yref="paper",
+                showarrow=False
+            )
+
+            return fig
+
+        # One unique LR pair per source-target combination.
+        a_unique = (
+            df_a[
+                [
+                    "source",
+                    "target",
+                    "ligand_complex",
+                    "receptor_complex"
+                ]
+            ]
+            .drop_duplicates()
+        )
+
+        b_unique = (
+            df_b[
+                [
+                    "source",
+                    "target",
+                    "ligand_complex",
+                    "receptor_complex"
+                ]
+            ]
+            .drop_duplicates()
+        )
+
+        counts_a = (
+            a_unique
+            .groupby(
+                ["source", "target"]
+            )
+            .size()
+            .reset_index(
+                name="count_a"
+            )
+        )
+
+        counts_b = (
+            b_unique
+            .groupby(
+                ["source", "target"]
+            )
+            .size()
+            .reset_index(
+                name="count_b"
+            )
+        )
+
+        # OUTER merge is essential:
+        # keep cell pairs occurring only in one condition.
+        summary = (
+            counts_a
+            .merge(
+                counts_b,
+                on=["source", "target"],
+                how="outer"
+            )
+            .fillna(
+                {
+                    "count_a": 0,
+                    "count_b": 0
+                }
+            )
+        )
+
+        summary["count_a"] = (
+            summary["count_a"].astype(int)
+        )
+
+        summary["count_b"] = (
+            summary["count_b"].astype(int)
+        )
+
+        summary["plot_value"] = (
+            summary["count_a"]
+            - summary["count_b"]
+        )
+
+        colorbar_title = "Δ LR interactions"
+
+        hover_value = (
+            "Δ LR interactions: %{z:.0f}"
+        )
+
+        annotation_text = (
+            f"Positive = more LR interactions in {condition_a}; "
+            f"negative = more in {condition_b}"
+        )
+
+    else:
 
         fig = go.Figure()
 
         fig.add_annotation(
-            text="No matched interactions available",
+            text=f"Unsupported metric: {metric}",
             x=0.5,
             y=0.5,
             xref="paper",
@@ -1475,50 +1655,46 @@ def create_cell_pair_difference_heatmap(
 
         return fig
 
-    delta_col = f"delta_{metric}"
+    # ============================================================
+    # Clean derived data
+    # ============================================================
 
-    # ------------------------------------------------------------
-    # Aggregate interaction changes by cell-cell pair
-    # ------------------------------------------------------------
-
-    summary = (
-        matched
-        .groupby(
-            ["source", "target"]
-        )
-        .agg(
-            median_delta=(
-                delta_col,
-                "median"
-            ),
-
-            matched_lr_interactions=(
-                delta_col,
-                "size"
-            )
-        )
-        .reset_index()
-    )
-    
     summary = summary.replace(
         [np.inf, -np.inf],
         np.nan
     )
 
     summary = summary.dropna(
-        subset=["median_delta"]
+        subset=["plot_value"]
     )
+
+    if summary.empty:
+
+        fig = go.Figure()
+
+        fig.add_annotation(
+            text="No cell-cell differences available",
+            x=0.5,
+            y=0.5,
+            xref="paper",
+            yref="paper",
+            showarrow=False
+        )
+
+        return fig
 
     summary["abs_change"] = (
-        summary["median_delta"].abs()
+        summary["plot_value"].abs()
     )
 
-    # ------------------------------------------------------------
-    # Top N here means:
-    # most changed CELL-CELL pairs
-    # ------------------------------------------------------------
+    # ============================================================
+    # Top N most changed cell pairs
+    # ============================================================
 
-    if top_n is not None and top_n > 0:
+    if (
+        top_n is not None
+        and top_n > 0
+    ):
 
         summary = (
             summary
@@ -1529,14 +1705,14 @@ def create_cell_pair_difference_heatmap(
             .head(top_n)
         )
 
-    # ------------------------------------------------------------
-    # Pivot into source x target matrix
-    # ------------------------------------------------------------
+    # ============================================================
+    # Pivot
+    # ============================================================
 
     matrix = summary.pivot(
-    index="source",
-    columns="target",
-    values="median_delta"
+        index="source",
+        columns="target",
+        values="plot_value"
     )
 
     if matrix.empty:
@@ -1554,9 +1730,9 @@ def create_cell_pair_difference_heatmap(
 
         return fig
 
-    # ------------------------------------------------------------
-    # Order by strongest changes
-    # ------------------------------------------------------------
+    # ============================================================
+    # Order rows / columns by strongest absolute difference
+    # ============================================================
 
     row_order = (
         matrix
@@ -1582,16 +1758,20 @@ def create_cell_pair_difference_heatmap(
         row_order,
         col_order
     ]
-    
-    # Convert missing heatmap combinations to JSON-safe None
-    z_values = matrix.astype(object).where(
-        pd.notna(matrix),
-        None
-    ).values
 
-    # ------------------------------------------------------------
-    # Symmetric scale around zero
-    # ------------------------------------------------------------
+    z_values = (
+        matrix
+        .astype(object)
+        .where(
+            pd.notna(matrix),
+            None
+        )
+        .values
+    )
+
+    # ============================================================
+    # Symmetric scale
+    # ============================================================
 
     values = matrix.values.astype(float)
 
@@ -1608,9 +1788,9 @@ def create_cell_pair_difference_heatmap(
     ):
         max_abs = 1
 
-    # ------------------------------------------------------------
-    # Heatmap
-    # ------------------------------------------------------------
+    # ============================================================
+    # Plot
+    # ============================================================
 
     fig = go.Figure(
         data=go.Heatmap(
@@ -1626,22 +1806,28 @@ def create_cell_pair_difference_heatmap(
             zmax=max_abs,
 
             colorbar=dict(
-                title=f"Median Δ{metric}"
+                title=colorbar_title
             ),
 
             hovertemplate=(
                 "Source: %{y}<br>"
                 "Target: %{x}<br>"
-                f"Median Δ{metric}: "
-                "%{z:.3f}"
-                "<extra></extra>"
+                + hover_value
+                + "<extra></extra>"
             )
         )
     )
 
+    metric_title = (
+        "LRscore"
+        if metric == "lrscore"
+        else "LR interaction count"
+    )
+
     fig.update_layout(
         title=(
-            f"Cell–Cell Communication Changes: "
+            f"Cell–Cell Communication Changes "
+            f"({metric_title}): "
             f"{condition_a} vs {condition_b}"
         ),
 
@@ -1656,7 +1842,7 @@ def create_cell_pair_difference_heatmap(
         margin=dict(
             l=200,
             r=120,
-            t=80,
+            t=120,
             b=200
         )
     )
@@ -1666,18 +1852,16 @@ def create_cell_pair_difference_heatmap(
     )
 
     fig.add_annotation(
-        text=(
-            f"Positive = higher {metric} in {condition_a}; "
-            f"negative = higher in {condition_b}"
-        ),
+        text=annotation_text,
 
         xref="paper",
         yref="paper",
 
         x=0,
-        y=-0.20,
+        y=1.06,
 
         xanchor="left",
+        yanchor="bottom",
 
         showarrow=False,
 
@@ -1697,28 +1881,266 @@ def create_lr_difference_barplot(
     """
     Compare ligand-receptor communication between two conditions.
 
-    For every matched source-target-LR interaction:
-        delta = metric(A) - metric(B)
+    metric == "lrscore":
+        Match identical source-target-LR interactions between
+        conditions and calculate median ΔLRscore across matched
+        source-target contexts for every LR pair.
 
-    Then aggregate across all cell-type contexts for each
-    ligand-receptor pair.
+    metric == "interaction_count":
+        Count the number of unique source-target contexts in
+        which each LR pair occurs in each condition and calculate:
 
-    Bar value:
-        median delta across cell-type contexts
+            contexts(A) - contexts(B)
+
+        LR pairs present only in one condition are retained.
+
+    Top N always means the LR pairs with the largest absolute
+    difference.
     """
 
-    matched = create_matched_condition_difference(
-        df_a,
-        df_b,
-        metric=metric
-    )
+    # ============================================================
+    # LRscore difference
+    # ============================================================
 
-    if matched.empty:
+    if metric == "lrscore":
+
+        matched = create_matched_condition_difference(
+            df_a,
+            df_b,
+            metric="lrscore"
+        )
+
+        if matched.empty:
+
+            fig = go.Figure()
+
+            fig.add_annotation(
+                text="No matched interactions available",
+                x=0.5,
+                y=0.5,
+                xref="paper",
+                yref="paper",
+                showarrow=False
+            )
+
+            return fig
+
+        delta_col = "delta_lrscore"
+
+        matched["cell_context"] = (
+            matched["source"].astype(str)
+            + " → "
+            + matched["target"].astype(str)
+        )
+
+        summary = (
+            matched
+            .groupby(
+                [
+                    "ligand_complex",
+                    "receptor_complex"
+                ]
+            )
+            .agg(
+                plot_value=(
+                    delta_col,
+                    "median"
+                ),
+
+                cell_contexts=(
+                    "cell_context",
+                    "nunique"
+                ),
+
+                matched_interactions=(
+                    delta_col,
+                    "size"
+                )
+            )
+            .reset_index()
+        )
+
+        x_title = (
+            f"Median ΔLRscore "
+            f"({condition_a} − {condition_b})"
+        )
+
+        hovertemplate = (
+            "<b>%{y}</b><br>"
+            "Median ΔLRscore: %{x:.3f}<br>"
+            "Matched cell-type contexts: "
+            "%{customdata[0]}<br>"
+            "Matched interactions: "
+            "%{customdata[1]}"
+            "<extra></extra>"
+        )
+
+        customdata = np.stack(
+            [
+                summary["cell_contexts"],
+                summary["matched_interactions"]
+            ],
+            axis=-1
+        )
+
+        metric_title = "LRscore"
+
+    # ============================================================
+    # Interaction-context count difference
+    # ============================================================
+
+    elif metric == "interaction_count":
+
+        required = {
+            "source",
+            "target",
+            "ligand_complex",
+            "receptor_complex"
+        }
+
+        if (
+            df_a is None
+            or df_b is None
+            or df_a.empty
+            or df_b.empty
+            or not required.issubset(df_a.columns)
+            or not required.issubset(df_b.columns)
+        ):
+
+            fig = go.Figure()
+
+            fig.add_annotation(
+                text="No interaction-count data available",
+                x=0.5,
+                y=0.5,
+                xref="paper",
+                yref="paper",
+                showarrow=False
+            )
+
+            return fig
+
+        # A context means one unique source → target pair
+        # for the specified ligand-receptor pair.
+
+        a_unique = (
+            df_a[
+                [
+                    "ligand_complex",
+                    "receptor_complex",
+                    "source",
+                    "target"
+                ]
+            ]
+            .drop_duplicates()
+        )
+
+        b_unique = (
+            df_b[
+                [
+                    "ligand_complex",
+                    "receptor_complex",
+                    "source",
+                    "target"
+                ]
+            ]
+            .drop_duplicates()
+        )
+
+        counts_a = (
+            a_unique
+            .groupby(
+                [
+                    "ligand_complex",
+                    "receptor_complex"
+                ]
+            )
+            .size()
+            .reset_index(
+                name="contexts_a"
+            )
+        )
+
+        counts_b = (
+            b_unique
+            .groupby(
+                [
+                    "ligand_complex",
+                    "receptor_complex"
+                ]
+            )
+            .size()
+            .reset_index(
+                name="contexts_b"
+            )
+        )
+
+        # OUTER merge:
+        # retain LR pairs unique to either condition.
+        summary = (
+            counts_a
+            .merge(
+                counts_b,
+
+                on=[
+                    "ligand_complex",
+                    "receptor_complex"
+                ],
+
+                how="outer"
+            )
+            .fillna(
+                {
+                    "contexts_a": 0,
+                    "contexts_b": 0
+                }
+            )
+        )
+
+        summary["contexts_a"] = (
+            summary["contexts_a"].astype(int)
+        )
+
+        summary["contexts_b"] = (
+            summary["contexts_b"].astype(int)
+        )
+
+        summary["plot_value"] = (
+            summary["contexts_a"]
+            - summary["contexts_b"]
+        )
+
+        x_title = (
+            f"Δ source → target contexts "
+            f"({condition_a} − {condition_b})"
+        )
+
+        customdata = np.stack(
+            [
+                summary["contexts_a"],
+                summary["contexts_b"]
+            ],
+            axis=-1
+        )
+
+        hovertemplate = (
+            "<b>%{y}</b><br>"
+            "Δ contexts: %{x:.0f}<br>"
+            f"{condition_a} contexts: "
+            "%{customdata[0]}<br>"
+            f"{condition_b} contexts: "
+            "%{customdata[1]}"
+            "<extra></extra>"
+        )
+
+        metric_title = "Interaction-context count"
+
+    else:
 
         fig = go.Figure()
 
         fig.add_annotation(
-            text="No matched interactions available",
+            text=f"Unsupported metric: {metric}",
             x=0.5,
             y=0.5,
             xref="paper",
@@ -1728,58 +2150,33 @@ def create_lr_difference_barplot(
 
         return fig
 
-    delta_col = f"delta_{metric}"
+    # ============================================================
+    # Clean
+    # ============================================================
 
-    # ------------------------------------------------------------
-    # Cell context label
-    # ------------------------------------------------------------
-
-    matched["cell_context"] = (
-        matched["source"].astype(str)
-        + " → "
-        + matched["target"].astype(str)
-    )
-
-    # ------------------------------------------------------------
-    # Aggregate across cell-type contexts
-    # ------------------------------------------------------------
-
-    summary = (
-        matched
-        .groupby(
-            [
-                "ligand_complex",
-                "receptor_complex"
-            ]
-        )
-        .agg(
-            median_delta=(
-                delta_col,
-                "median"
-            ),
-
-            cell_contexts=(
-                "cell_context",
-                "nunique"
-            ),
-
-            matched_interactions=(
-                delta_col,
-                "size"
-            )
-        )
-        .reset_index()
-    )
-    
-    # Remove non-finite derived values before plotting
     summary = summary.replace(
         [np.inf, -np.inf],
         np.nan
     )
 
     summary = summary.dropna(
-        subset=["median_delta"]
+        subset=["plot_value"]
     )
+
+    if summary.empty:
+
+        fig = go.Figure()
+
+        fig.add_annotation(
+            text="No ligand-receptor differences available",
+            x=0.5,
+            y=0.5,
+            xref="paper",
+            yref="paper",
+            showarrow=False
+        )
+
+        return fig
 
     summary["lr_pair"] = (
         summary["ligand_complex"].astype(str)
@@ -1788,14 +2185,17 @@ def create_lr_difference_barplot(
     )
 
     summary["abs_change"] = (
-        summary["median_delta"].abs()
+        summary["plot_value"].abs()
     )
 
-    # ------------------------------------------------------------
-    # Top N = most changed LR pairs
-    # ------------------------------------------------------------
+    # ============================================================
+    # Always select Top N by absolute difference
+    # ============================================================
 
-    if top_n is not None and top_n > 0:
+    if (
+        top_n is not None
+        and top_n > 0
+    ):
 
         summary = (
             summary
@@ -1806,46 +2206,50 @@ def create_lr_difference_barplot(
             .head(top_n)
         )
 
-    # ------------------------------------------------------------
-    # Sort negative → positive for display
-    # ------------------------------------------------------------
-
+    # Negative -> positive display
     summary = summary.sort_values(
-        "median_delta",
+        "plot_value",
         ascending=True
     )
 
-    # ------------------------------------------------------------
-    # Plot
-    # ------------------------------------------------------------
+    # IMPORTANT:
+    # customdata was made before Top N above.
+    # Recreate it after subsetting to keep lengths aligned.
 
-    customdata = np.stack(
-        [
-            summary["cell_contexts"],
-            summary["matched_interactions"]
-        ],
-        axis=-1
-    )
+    if metric == "lrscore":
+
+        customdata = np.stack(
+            [
+                summary["cell_contexts"],
+                summary["matched_interactions"]
+            ],
+            axis=-1
+        )
+
+    else:
+
+        customdata = np.stack(
+            [
+                summary["contexts_a"],
+                summary["contexts_b"]
+            ],
+            axis=-1
+        )
+
+    # ============================================================
+    # Plot
+    # ============================================================
 
     fig = go.Figure(
         go.Bar(
-            x=summary["median_delta"],
+            x=summary["plot_value"],
             y=summary["lr_pair"],
 
             orientation="h",
 
             customdata=customdata,
 
-            hovertemplate=(
-                "<b>%{y}</b><br>"
-                f"Median Δ{metric}: "
-                "%{x:.3f}<br>"
-                "Cell-type contexts: "
-                "%{customdata[0]}<br>"
-                "Matched interactions: "
-                "%{customdata[1]}"
-                "<extra></extra>"
-            )
+            hovertemplate=hovertemplate
         )
     )
 
@@ -1856,14 +2260,12 @@ def create_lr_difference_barplot(
 
     fig.update_layout(
         title=(
-            f"Ligand–Receptor Changes: "
+            f"Ligand–Receptor Changes "
+            f"({metric_title}): "
             f"{condition_a} vs {condition_b}"
         ),
 
-        xaxis_title=(
-            f"Median Δ{metric} "
-            f"({condition_a} − {condition_b})"
-        ),
+        xaxis_title=x_title,
 
         yaxis_title="Ligand → Receptor",
 

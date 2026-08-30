@@ -400,12 +400,23 @@ def create_data_explorer_tab() -> ui.TagChild:
                     "matched ligand–receptor interactions for each source → target pair.",
                     class_="text-muted"
                 ),
+                
+                ui.input_radio_buttons(
+                    "overview_cell_metric",
+                    "Compare by:",
+                    choices={
+                        "lrscore": "LRscore difference",
+                        "interaction_count": "LR interaction-count difference"
+                    },
+                    selected="lrscore",
+                    inline=True
+                ),
 
                 ui.input_radio_buttons(
                     "overview_cell_mode",
                     "Interactions to include:",
                     choices={
-                        "all": "All matched interactions",
+                        "all": "All interactions",
                         "filtered": "Apply sidebar filters",
                         "top": "Top N most changed cell pairs"
                     },
@@ -443,28 +454,29 @@ def create_data_explorer_tab() -> ui.TagChild:
                 ),
 
                 ui.input_radio_buttons(
-                    "overview_lr_diff_mode",
-                    "Interactions to include:",
+                    "overview_lr_diff_metric",
+                    "Compare by:",
                     choices={
-                        "all": "All matched interactions",
-                        "filtered": "Apply sidebar filters",
-                        "top": "Top N most changed LR pairs"
+                        "lrscore": "LRscore difference",
+                        "interaction_count": "Interaction-context count difference"
                     },
-                    selected="top",
+                    selected="lrscore",
                     inline=True
                 ),
 
-                ui.panel_conditional(
-                    "input.overview_lr_diff_mode === 'top'",
+                ui.input_numeric(
+                    "overview_lr_diff_top_n",
+                    "Top N most changed LR pairs:",
+                    value=30,
+                    min=10,
+                    max=200,
+                    step=10
+                ),
 
-                    ui.input_numeric(
-                        "overview_lr_diff_top_n",
-                        "Top N LR pairs:",
-                        value=30,
-                        min=10,
-                        max=1000,
-                        step=10
-                    )
+                ui.input_checkbox(
+                    "overview_lr_diff_apply_filters",
+                    "Apply sidebar filters",
+                    value=False
                 ),
 
                 ui.output_ui("overview_lr_difference_plot_container"),
