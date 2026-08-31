@@ -735,7 +735,105 @@ def create_app_styles() -> ui.TagChild:
                 height: 100vh;
                 overflow: hidden;
             }
-        """)
+        """),
+        ui.tags.script("""
+            (function () {
+
+                function getPlotName(plot) {
+
+                    // Walk upwards and look for a meaningful Shiny output id
+                    let element = plot;
+
+                    while (element) {
+
+                        if (
+                            element.id &&
+                            !element.id.startsWith("plotly-") &&
+                            !element.id.startsWith("htmlwidget-")
+                        ) {
+                            return element.id;
+                        }
+
+                        element = element.parentElement;
+                    }
+
+                    return "plot";
+                }
+
+
+                function configurePlotDownload(plot) {
+
+                    if (!plot || plot.dataset.customDownloadConfigured === "true") {
+                        return;
+                    }
+
+                    const button = plot.querySelector(
+                        '.modebar-btn[data-title*="Download plot"]'
+                    );
+
+                    if (!button) {
+                        return;
+                    }
+
+                    plot.dataset.customDownloadConfigured = "true";
+
+                    button.addEventListener(
+                        "click",
+                        function (event) {
+
+                            // Stop Plotly's normal "newplot.png" handler
+                            event.preventDefault();
+                            event.stopPropagation();
+                            event.stopImmediatePropagation();
+
+                            const plotName = getPlotName(plot);
+
+                            const filename =
+                                "IBD_LIANA_" + plotName;
+
+                            Plotly.downloadImage(
+                                plot,
+                                {
+                                    format: "png",
+                                    filename: filename,
+                                    width: 1400,
+                                    height: 900,
+                                    scale: 2
+                                }
+                            );
+
+                        },
+                        true
+                    );
+                }
+
+
+                function configureAllPlots() {
+
+                    document
+                        .querySelectorAll(".js-plotly-plot")
+                        .forEach(configurePlotDownload);
+                }
+
+
+                // Plotly/Shiny creates and replaces plots dynamically.
+                // Watch the page continuously for newly rendered plots.
+                const observer = new MutationObserver(function () {
+                    configureAllPlots();
+                });
+
+                observer.observe(
+                    document.body,
+                    {
+                        childList: true,
+                        subtree: true
+                    }
+                );
+
+                configureAllPlots();
+
+            })();
+            """)
     )
 
 def create_full_ui(data_dir: str = "/nfs/data/COST_IBD/downstream_tasks/interactions/output/HNC", cli_mode: bool = False) -> ui.TagChild:

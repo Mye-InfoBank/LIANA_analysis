@@ -70,8 +70,6 @@ def create_server_function(data_handler: DataHandler):
         
 
         
-
-        
         @reactive.effect
         @reactive.event(input.discover_data)
         def discover_data():
