@@ -2058,12 +2058,18 @@ def create_cell_pair_difference_heatmap(
             l=200,
             r=120,
             t=120,
-            b=200
+            b=260
         )
     )
 
+    
     fig.update_xaxes(
-        tickangle=90
+        tickangle=90,
+        automargin=True
+    )
+
+    fig.update_yaxes(
+        automargin=True
     )
 
     fig.add_annotation(
