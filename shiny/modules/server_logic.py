@@ -7,6 +7,7 @@ Contains all server-side reactive logic and event handlers.
 import pandas as pd
 import asyncio
 import plotly.graph_objects as go
+from pathlib import Path
 from shiny import Inputs, Outputs, Session, render, reactive, ui
 from shinywidgets import render_plotly, output_widget
 from typing import Dict, List, Optional
@@ -33,6 +34,12 @@ from .utils import (
     create_export_summary, create_temp_export_file
 )
 
+from .ai_snapshots import (
+    save_ai_snapshot,
+    figure_to_dict,
+    cleanup_old_snapshots
+)
+
 logger = logging.getLogger(__name__)
 
 def create_server_function(data_handler: DataHandler):
@@ -45,6 +52,8 @@ def create_server_function(data_handler: DataHandler):
     Returns:
         Server function
     """
+    # Remove expired snapshots whenever the application starts.
+    cleanup_old_snapshots()
     
     def server(input: Inputs, output: Outputs, session: Session):
         
@@ -68,7 +77,9 @@ def create_server_function(data_handler: DataHandler):
         # Dedicated reactive trigger/data for the Data Explorer count plot
         interaction_counts_state = reactive.Value({})
         
-
+        # Last generated AI snapshot URL
+        ai_snapshot_relative_url = reactive.Value(None)
+        
         
         @reactive.effect
         @reactive.event(input.discover_data)
@@ -490,6 +501,1125 @@ def create_server_function(data_handler: DataHandler):
 
             return condition_a, condition_b
         
+        def build_ai_snapshot_payload():
+            """
+            Build a machine-readable representation of the
+            current LIANA dashboard state.
+
+            This includes:
+            - dataset metadata
+            - sidebar filters
+            - plot settings
+            - filtered-data summary
+            - top filtered interactions
+            - Data Table preview
+            - current Plotly outputs
+            """
+
+            # ========================================================
+            # CURRENT DATASET
+            # ========================================================
+
+            data_dir = (
+                data_handler.top_level_dir
+                or ""
+            )
+
+            dataset_name = (
+                Path(data_dir).name
+                if data_dir
+                else None
+            )
+
+            (
+                condition_a,
+                condition_b
+            ) = get_selected_overview_conditions()
+
+            # ========================================================
+            # BASE PAYLOAD
+            # ========================================================
+
+            payload = {
+
+                "schema_version": "1.0",
+
+                "description": (
+                    "Machine-readable snapshot of the current "
+                    "IBD LIANA Results Explorer state."
+                ),
+
+                "metadata": {
+
+                    "analysis":
+                        "LIANA cell-cell communication",
+
+                    "dataset":
+                        dataset_name,
+
+                    "splitting_key":
+                        input.splitting_key(),
+
+                    "selected_contrast":
+                        input.contrast(),
+
+                    "condition_comparison": {
+
+                        "condition_a":
+                            condition_a,
+
+                        "condition_b":
+                            condition_b
+                    }
+                },
+
+                # ====================================================
+                # SIDEBAR FILTERS
+                # ====================================================
+
+                "filters": {
+
+                    "logfc_threshold":
+                        input.logfc_threshold(),
+
+                    "lrscore_threshold":
+                        input.lrscore_threshold(),
+
+                    "specificity_rank_threshold":
+                        input.specificity_threshold(),
+
+                    "min_source_cells":
+                        input.min_source_cells(),
+
+                    "min_target_cells":
+                        input.min_target_cells(),
+
+                    "source_cell_types":
+                        list(
+                            input.source_types()
+                            or []
+                        ),
+
+                    "target_cell_types":
+                        list(
+                            input.target_types()
+                            or []
+                        )
+                },
+
+                # ====================================================
+                # CURRENT PLOT SETTINGS
+                # ====================================================
+
+                "plot_settings": {
+
+                    "interaction_landscape": {
+
+                        "top_n":
+                            input.overview_interaction_top_n(),
+
+                        "apply_sidebar_filters":
+                            input.overview_apply_filters()
+                    },
+
+                    "cell_cell_changes": {
+
+                        "metric":
+                            input.overview_cell_metric(),
+
+                        "mode":
+                            input.overview_cell_mode(),
+
+                        "top_n":
+                            input.overview_cell_top_n()
+                    },
+
+                    "ligand_receptor_changes": {
+
+                        "metric":
+                            input.overview_lr_diff_metric(),
+
+                        "top_n":
+                            input.overview_lr_diff_top_n(),
+
+                        "apply_sidebar_filters":
+                            input.overview_lr_diff_apply_filters()
+                    },
+
+                    "network": {
+
+                        "mode":
+                            input.network_options(),
+
+                        "top_n":
+                            input.network_top_n(),
+
+                        "layout":
+                            input.network_layout(),
+
+                        "cell_count_network_top_n":
+                            input.cell_count_network_top_n()
+                    },
+
+                    "heatmap": {
+
+                        "metric":
+                            input.heatmap_metric(),
+
+                        "colorscale":
+                            input.colorscale(),
+
+                        "show_values":
+                            input.show_heatmap_values()
+                    },
+
+                    "ligand_receptor_dotplot": {
+
+                        "top_n":
+                            input.top_n_interactions(),
+
+                        "color_by":
+                            input.dotplot_color()
+                    },
+
+                    "ligand_receptor_boxplot": {
+
+                        "metric":
+                            input.lr_boxplot_metric(),
+
+                        "top_n":
+                            input.lr_boxplot_top_n()
+                    }
+                },
+
+                # ====================================================
+                # IMPORTANT INTERPRETATION NOTES FOR LLMS
+                # ====================================================
+
+                "interpretation_notes": [
+
+                    (
+                        "LRscore is used as a LIANA interaction "
+                        "magnitude score; higher values indicate "
+                        "stronger inferred communication."
+                    ),
+
+                    (
+                        "specificity_rank is a consensus specificity "
+                        "rank; lower values indicate greater specificity."
+                    ),
+
+                    (
+                        "magnitude_rank is a consensus magnitude rank; "
+                        "lower values indicate stronger consensus ranking."
+                    ),
+
+                    (
+                        "lr_logfc is a LIANA specificity-related score "
+                        "within a condition and must not be interpreted "
+                        "as a formal CD-vs-HC differential log fold change."
+                    ),
+
+                    (
+                        "Condition-difference plots are descriptive "
+                        "comparisons of separately inferred LIANA "
+                        "communication networks."
+                    ),
+
+                    (
+                        "LRscore differences use only interaction "
+                        "identities present in both compared conditions."
+                    ),
+
+                    (
+                        "A LIANA interaction score must not automatically "
+                        "be interpreted as statistical significance or causality."
+                    )
+                ]
+            }
+
+            # ========================================================
+            # FILTERED DATA
+            # ========================================================
+
+            filtered_df = (
+                get_filtered_data_no_state_update()
+            )
+
+            payload["filtered_dataset"] = {
+                "n_rows": 0
+            }
+
+            if (
+                filtered_df is not None
+                and not filtered_df.empty
+            ):
+
+                # ----------------------------------------------------
+                # Summary
+                # ----------------------------------------------------
+
+                filtered_summary = {
+
+                    "n_rows":
+                        int(
+                            len(filtered_df)
+                        )
+                }
+
+                if all(
+                    col in filtered_df.columns
+                    for col in [
+                        "source",
+                        "target"
+                    ]
+                ):
+
+                    filtered_summary[
+                        "n_unique_cell_pairs"
+                    ] = int(
+                        filtered_df[
+                            ["source", "target"]
+                        ]
+                        .drop_duplicates()
+                        .shape[0]
+                    )
+
+                if all(
+                    col in filtered_df.columns
+                    for col in [
+                        "ligand_complex",
+                        "receptor_complex"
+                    ]
+                ):
+
+                    filtered_summary[
+                        "n_unique_ligand_receptor_pairs"
+                    ] = int(
+                        filtered_df[
+                            [
+                                "ligand_complex",
+                                "receptor_complex"
+                            ]
+                        ]
+                        .drop_duplicates()
+                        .shape[0]
+                    )
+
+                if "lrscore" in filtered_df.columns:
+
+                    filtered_summary[
+                        "median_lrscore"
+                    ] = float(
+                        filtered_df[
+                            "lrscore"
+                        ].median()
+                    )
+
+                if "lr_logfc" in filtered_df.columns:
+
+                    filtered_summary[
+                        "median_lr_logfc"
+                    ] = float(
+                        filtered_df[
+                            "lr_logfc"
+                        ].median()
+                    )
+
+                payload[
+                    "filtered_dataset"
+                ] = filtered_summary
+
+                # ----------------------------------------------------
+                # Top 500 filtered interactions
+                # ----------------------------------------------------
+
+                top_df = (
+                    filtered_df.copy()
+                )
+
+                if (
+                    "magnitude_rank"
+                    in top_df.columns
+                ):
+
+                    top_df = (
+                        top_df
+                        .sort_values(
+                            "magnitude_rank",
+                            ascending=True
+                        )
+                        .head(500)
+                    )
+
+                elif (
+                    "lrscore"
+                    in top_df.columns
+                ):
+
+                    top_df = (
+                        top_df
+                        .sort_values(
+                            "lrscore",
+                            ascending=False
+                        )
+                        .head(500)
+                    )
+
+                else:
+
+                    top_df = (
+                        top_df.head(500)
+                    )
+
+                snapshot_columns = [
+
+                    "source",
+                    "target",
+
+                    "source_n_cells",
+                    "target_n_cells",
+
+                    "ligand_complex",
+                    "receptor_complex",
+
+                    "lrscore",
+                    "lr_logfc",
+                    "lr_means",
+
+                    "specificity_rank",
+                    "magnitude_rank"
+                ]
+
+                snapshot_columns = [
+                    col
+                    for col in snapshot_columns
+                    if col in top_df.columns
+                ]
+
+                top_df = (
+                    top_df[
+                        snapshot_columns
+                    ]
+                    .replace(
+                        [float("inf"), float("-inf")],
+                        None
+                    )
+                )
+
+                payload[
+                    "top_filtered_interactions"
+                ] = (
+                    top_df
+                    .where(
+                        pd.notna(top_df),
+                        None
+                    )
+                    .to_dict(
+                        orient="records"
+                    )
+                )
+
+                # ----------------------------------------------------
+                # Same preview used conceptually by Data Table
+                # ----------------------------------------------------
+
+                table_df = (
+                    filtered_df.copy()
+                )
+
+                search_term = (
+                    input.table_search()
+                )
+
+                if (
+                    search_term
+                    and search_term.strip()
+                ):
+
+                    search_term = (
+                        search_term
+                        .lower()
+                    )
+
+                    search_mask = (
+
+                        table_df[
+                            "ligand_complex"
+                        ]
+                        .astype(str)
+                        .str.lower()
+                        .str.contains(
+                            search_term,
+                            na=False
+                        )
+
+                        |
+
+                        table_df[
+                            "receptor_complex"
+                        ]
+                        .astype(str)
+                        .str.lower()
+                        .str.contains(
+                            search_term,
+                            na=False
+                        )
+
+                        |
+
+                        table_df[
+                            "source"
+                        ]
+                        .astype(str)
+                        .str.lower()
+                        .str.contains(
+                            search_term,
+                            na=False
+                        )
+
+                        |
+
+                        table_df[
+                            "target"
+                        ]
+                        .astype(str)
+                        .str.lower()
+                        .str.contains(
+                            search_term,
+                            na=False
+                        )
+                    )
+
+                    table_df = (
+                        table_df[
+                            search_mask
+                        ]
+                    )
+
+                table_columns = [
+                    col
+                    for col in snapshot_columns
+                    if col in table_df.columns
+                ]
+
+                table_limit = min(
+                    input.table_rows()
+                    or 100,
+                    500
+                )
+
+                table_df = (
+                    table_df[
+                        table_columns
+                    ]
+                    .head(table_limit)
+                )
+
+                table_df = (
+                    table_df
+                    .where(
+                        pd.notna(table_df),
+                        None
+                    )
+                )
+
+                payload[
+                    "data_table_preview"
+                ] = (
+                    table_df.to_dict(
+                        orient="records"
+                    )
+                )
+
+            # ========================================================
+            # CREATE EXACT CURRENT PLOT OUTPUTS
+            #
+            # These are machine-readable Plotly specifications.
+            # ========================================================
+
+            figures = {}
+
+            # --------------------------------------------------------
+            # Dataset interaction-count overview
+            # --------------------------------------------------------
+
+            counts = (
+                interaction_counts_state.get()
+            )
+
+            if counts:
+
+                count_df = pd.DataFrame([
+                    {
+                        "contrast": contrast,
+                        "interactions": n
+                    }
+                    for contrast, n
+                    in counts.items()
+                ])
+
+                figures[
+                    "dataset_interaction_counts"
+                ] = figure_to_dict(
+                    create_structure_overview_plot(
+                        count_df
+                    )
+                )
+
+            # --------------------------------------------------------
+            # Overview Plot 1
+            # --------------------------------------------------------
+
+            overview_results = (
+                get_overview_condition_results(
+                    use_sidebar_filters=(
+                        input.overview_apply_filters()
+                    )
+                )
+            )
+
+            figures[
+                "interaction_landscape"
+            ] = figure_to_dict(
+                create_global_condition_dotplot(
+                    overview_results,
+                    top_n=(
+                        input.overview_interaction_top_n()
+                        or 50
+                    )
+                )
+            )
+
+            # --------------------------------------------------------
+            # Overview Plot 2
+            # --------------------------------------------------------
+
+            if (
+                condition_a
+                and condition_b
+            ):
+
+                cell_mode = (
+                    input.overview_cell_mode()
+                )
+
+                cell_results = (
+                    get_overview_condition_results(
+                        use_sidebar_filters=(
+                            cell_mode
+                            == "filtered"
+                        )
+                    )
+                )
+
+                if (
+                    condition_a in cell_results
+                    and condition_b in cell_results
+                ):
+
+                    cell_top_n = None
+
+                    if (
+                        cell_mode
+                        == "top"
+                    ):
+
+                        cell_top_n = (
+                            input.overview_cell_top_n()
+                        )
+
+                    figures[
+                        "cell_cell_changes"
+                    ] = figure_to_dict(
+
+                        create_cell_pair_difference_heatmap(
+
+                            cell_results[
+                                condition_a
+                            ],
+
+                            cell_results[
+                                condition_b
+                            ],
+
+                            condition_a=
+                                condition_a,
+
+                            condition_b=
+                                condition_b,
+
+                            metric=(
+                                input.overview_cell_metric()
+                                or "lrscore"
+                            ),
+
+                            top_n=
+                                cell_top_n
+                        )
+                    )
+
+                # ----------------------------------------------------
+                # Overview Plot 3
+                # ----------------------------------------------------
+
+                lr_results = (
+                    get_overview_condition_results(
+                        use_sidebar_filters=(
+                            input.overview_lr_diff_apply_filters()
+                        )
+                    )
+                )
+
+                if (
+                    condition_a in lr_results
+                    and condition_b in lr_results
+                ):
+
+                    figures[
+                        "ligand_receptor_changes"
+                    ] = figure_to_dict(
+
+                        create_lr_difference_barplot(
+
+                            lr_results[
+                                condition_a
+                            ],
+
+                            lr_results[
+                                condition_b
+                            ],
+
+                            condition_a=
+                                condition_a,
+
+                            condition_b=
+                                condition_b,
+
+                            metric=(
+                                input.overview_lr_diff_metric()
+                                or "lrscore"
+                            ),
+
+                            top_n=(
+                                input.overview_lr_diff_top_n()
+                                or 30
+                            )
+                        )
+                    )
+
+            # ========================================================
+            # PLOTS BASED ON CURRENT FILTERED DATA
+            # ========================================================
+
+            if (
+                filtered_df is not None
+                and not filtered_df.empty
+            ):
+
+                # ----------------------------------------------------
+                # Network
+                # ----------------------------------------------------
+
+                network_df = (
+                    filtered_df
+                )
+
+                if (
+                    input.network_options()
+                    == "top"
+                ):
+
+                    network_df = (
+                        data_handler
+                        .get_top_interactions(
+                            network_df,
+                            n=(
+                                input.network_top_n()
+                                or 50
+                            )
+                        )
+                    )
+
+                figures[
+                    "network"
+                ] = figure_to_dict(
+
+                    create_network_plot(
+
+                        network_df,
+
+                        layout_algorithm=(
+                            input.network_layout()
+                            or "spring"
+                        )
+                    )
+                )
+
+                # ----------------------------------------------------
+                # Cell-count network
+                # ----------------------------------------------------
+
+                figures[
+                    "cell_count_network"
+                ] = figure_to_dict(
+
+                    create_cell_count_network_plot(
+
+                        filtered_df,
+
+                        layout_algorithm=(
+                            input.network_layout()
+                            or "spring"
+                        ),
+
+                        top_n_nodes=(
+                            input.cell_count_network_top_n()
+                            or 30
+                        )
+                    )
+                )
+
+                # ----------------------------------------------------
+                # Heatmap
+                # ----------------------------------------------------
+
+                figures[
+                    "heatmap"
+                ] = figure_to_dict(
+
+                    create_heatmap_plot(
+
+                        filtered_df,
+
+                        value_col=(
+                            input.heatmap_metric()
+                            or "interaction_count"
+                        ),
+
+                        colorscale=(
+                            input.colorscale()
+                            or "Blues"
+                        ),
+
+                        show_values=(
+                            input.show_heatmap_values()
+                        )
+                    )
+                )
+
+                # ----------------------------------------------------
+                # LR dotplot
+                # ----------------------------------------------------
+
+                figures[
+                    "ligand_receptor_dotplot"
+                ] = figure_to_dict(
+
+                    create_dotplot(
+
+                        filtered_df,
+
+                        top_n=(
+                            input.top_n_interactions()
+                            or 20
+                        ),
+
+                        color_col=(
+                            input.dotplot_color()
+                            or "specificity_rank"
+                        )
+                    )
+                )
+
+                # ----------------------------------------------------
+                # LR boxplot
+                # ----------------------------------------------------
+
+                figures[
+                    "ligand_receptor_boxplot"
+                ] = figure_to_dict(
+
+                    create_lr_boxplot(
+
+                        filtered_df,
+
+                        metric=(
+                            input.lr_boxplot_metric()
+                            or "lrscore"
+                        ),
+
+                        top_n=(
+                            input.lr_boxplot_top_n()
+                            or 20
+                        )
+                    )
+                )
+
+            payload[
+                "plot_outputs"
+            ] = figures
+
+            return payload
+        
+        @reactive.effect
+        @reactive.event(
+            input.create_ai_snapshot
+        )
+        def create_ai_snapshot():
+
+            if not app_state.get()[
+                "data_loaded"
+            ]:
+
+                ui.notification_show(
+                    "Please wait until the LIANA data are loaded.",
+                    type="warning"
+                )
+
+                return
+
+            try:
+
+                payload = (
+                    build_ai_snapshot_payload()
+                )
+
+                snapshot_id = (
+                    save_ai_snapshot(
+                        payload
+                    )
+                )
+
+                relative_url = (
+                    f"ai_snapshots/"
+                    f"{snapshot_id}.json"
+                )
+
+                ai_snapshot_relative_url.set(
+                    relative_url
+                )
+                
+
+                ui.update_action_button(
+                    "create_ai_snapshot",
+                    label="✓ Snapshot Created!"
+                )
+
+                ui.notification_show(
+                    "AI snapshot created successfully.",
+                    type="success"
+                )
+
+            except Exception as e:
+
+                logger.exception(
+                    "Failed to create AI snapshot"
+                )
+
+                ui.notification_show(
+                    f"Could not create AI snapshot: {e}",
+                    type="error"
+                )
+                
+        @output
+        @render.ui
+        def ai_snapshot_link():
+
+            relative_url = (
+                ai_snapshot_relative_url.get()
+            )
+
+            if not relative_url:
+                return None
+
+            return ui.div(
+
+                ui.p(
+                    "Snapshot created:",
+                    style="font-weight: 600;"
+                ),
+
+                ui.tags.a(
+                    "Open AI snapshot",
+                    href=relative_url,
+                    target="_blank"
+                ),
+
+                ui.br(),
+                ui.br(),
+
+                # ----------------------------------------------------
+                # URL field
+                #
+                # JavaScript fills this with the complete absolute URL
+                # such as:
+                # http://127.0.0.1:8080/ai_snapshots/xxx.json
+                # ----------------------------------------------------
+
+                ui.tags.input(
+                    id="ai_snapshot_url_field",
+                    type="text",
+                    readonly="readonly",
+                    value=relative_url,
+                    class_="form-control ai-snapshot-url",
+                    onclick="this.select();"
+                ),
+
+                ui.br(),
+
+                # ----------------------------------------------------
+                # Copy button
+                # ----------------------------------------------------
+
+                ui.tags.button(
+                    "📋 Copy URL",
+
+                    id="copy_ai_snapshot_button",
+
+                    type="button",
+
+                    class_="btn btn-secondary",
+
+                    onclick="""
+                        const field =
+                            document.getElementById(
+                                'ai_snapshot_url_field'
+                            );
+
+                        if (!field) {
+                            alert('Snapshot URL field not found.');
+                            return;
+                        }
+
+                        field.focus();
+                        field.select();
+                        field.setSelectionRange(
+                            0,
+                            field.value.length
+                        );
+
+                        const successful =
+                            document.execCommand('copy');
+
+                        if (successful) {
+                            this.innerText = '✓ Copied!';
+                        } else {
+                            this.innerText = 'Select URL and press Ctrl+C';
+                        }
+                    """
+                ),
+
+                ui.br(),
+                ui.br(),
+
+                ui.p(
+                    "Paste this URL into ChatGPT, Claude, Gemini "
+                    "or another LLM. The snapshot expires after "
+                    "14 days or when the app container is rebuilt.",
+                    class_="text-muted"
+                ),
+
+                # ----------------------------------------------------
+                # Convert relative URL into complete URL
+                # ----------------------------------------------------
+
+                ui.tags.script(
+                    f"""
+                    (function() {{
+
+                        const field =
+                            document.getElementById(
+                                'ai_snapshot_url_field'
+                            );
+
+                        if (!field) return;
+
+                        field.value =
+                            new URL(
+                                '{relative_url}',
+                                window.location.href
+                            ).href;
+
+                    }})();
+                    """
+                )
+            )
+            
+        @reactive.effect
+        def reset_ai_snapshot_when_state_changes():
+            """
+            Remove the displayed snapshot whenever an input that
+            affects the represented analysis state changes.
+
+            The already-created JSON file is NOT deleted.
+            """
+
+            # ========================================================
+            # Register all relevant reactive dependencies
+            # ========================================================
+
+            input.splitting_key()
+            input.contrast()
+
+            # Sidebar filters
+            input.logfc_threshold()
+            input.lrscore_threshold()
+            input.specificity_threshold()
+            input.min_source_cells()
+            input.min_target_cells()
+            input.source_types()
+            input.target_types()
+
+            # Overview
+            input.overview_interaction_top_n()
+            input.overview_apply_filters()
+
+            input.overview_condition_comparison()
+
+            input.overview_cell_metric()
+            input.overview_cell_mode()
+            input.overview_cell_top_n()
+
+            input.overview_lr_diff_metric()
+            input.overview_lr_diff_top_n()
+            input.overview_lr_diff_apply_filters()
+
+            # Network
+            input.network_options()
+            input.network_top_n()
+            input.network_layout()
+            input.cell_count_network_top_n()
+
+            # Heatmap
+            input.heatmap_metric()
+            input.show_heatmap_values()
+            input.colorscale()
+
+            # Ligand–receptor tab
+            input.top_n_interactions()
+            input.dotplot_color()
+
+            input.lr_boxplot_metric()
+            input.lr_boxplot_top_n()
+
+            # Data table
+            input.table_rows()
+            input.table_search()
+
+            # ========================================================
+            # Reset the CURRENTLY DISPLAYED snapshot
+            # ========================================================
+
+            ai_snapshot_relative_url.set(
+                None
+            )
+
+            ui.update_action_button(
+                "create_ai_snapshot",
+                label="🔗 Create AI Snapshot"
+            )
+        
         @output
         @render_plotly
         def network_plot():
@@ -561,24 +1691,6 @@ def create_server_function(data_handler: DataHandler):
                 df,
                 metric=metric,
                 top_n=top_n
-            )
-            
-        @output
-        @render_plotly
-        def comparison_plot():
-            """Render comparison plot."""
-            source_cell = input.comparison_source()
-            target_cell = input.comparison_target()
-            metric = input.comparison_metric()
-            max_interactions = input.comparison_max_interactions()
-            
-            if not source_cell or not target_cell:
-                return create_scatter_comparison({}, "", "")
-            
-            # Pass the raw results and let the viz enforce the cap consistently per condition
-            return create_scatter_comparison(
-                data_handler.results, source_cell, target_cell, value_col=metric,
-                max_points_per_condition=max_interactions
             )
         
         @output

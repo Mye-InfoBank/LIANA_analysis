@@ -17,6 +17,7 @@ from modules.data_handler import DataHandler
 from modules.ui_components import create_full_ui
 from modules.server_logic import create_server_function
 from modules.utils import setup_logging
+from modules.ai_snapshots import SNAPSHOT_DIR
 
 def parse_arguments():
     """Parse command line arguments."""
@@ -86,7 +87,7 @@ def create_app(data_dir: str) -> App:
     server_function = create_server_function(data_handler)
     
     # Create and return the app
-    app = App(app_ui, server_function)
+    app = App(app_ui, server_function, static_assets={"/ai_snapshots": SNAPSHOT_DIR})
     
     logger.info("LIANA Results Explorer initialized successfully")
     return app

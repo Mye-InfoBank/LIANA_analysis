@@ -65,6 +65,31 @@ def create_sidebar(data_dir: str = "/nfs/data/COST_IBD/downstream_tasks/interact
                               choices=[], selected=[], multiple=True),
             ui.input_selectize("target_types", "Target Cell Types:", 
                               choices=[], selected=[], multiple=True),
+            
+            # ============================================================
+            # AI SNAPSHOT
+            # ============================================================
+
+            ui.h4("🤖 AI Analysis"),
+
+            ui.p(
+                "Create a machine-readable snapshot of the current "
+                "analysis state for use with AI assistants.",
+                class_="text-muted"
+            ),
+            ui.input_action_button(
+                "create_ai_snapshot",
+                "🔗 Create AI Snapshot",
+                class_="btn-primary"
+            ),
+
+            ui.br(),
+            ui.br(),
+
+            ui.output_ui(
+                "ai_snapshot_link"
+            ),
+
             ui.br(),
             
             class_="sidebar-content"
@@ -711,6 +736,11 @@ def create_app_styles() -> ui.TagChild:
                 border-radius: 10px;
                 box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
             }
+            .ai-snapshot-url {
+                word-break: break-all;
+                font-size: 0.85em;
+            }
+            
             /* Custom scrollbar styling */
             .sidebar-content::-webkit-scrollbar,
             .main-content::-webkit-scrollbar {
@@ -738,7 +768,7 @@ def create_app_styles() -> ui.TagChild:
         """),
         ui.tags.script("""
             (function () {
-
+                
                 function getPlotName(plot) {
 
                     // Walk upwards and look for a meaningful Shiny output id
