@@ -92,6 +92,33 @@ def create_sidebar(data_dir: str = "/nfs/data/COST_IBD/downstream_tasks/interact
 
             ui.br(),
             
+            ui.hr(),
+            ui.h5("💾 Save / Restore Settings"),
+
+            ui.p(
+                "Download the current dashboard settings or restore "
+                "a previously saved state.",
+                class_="text-muted"
+            ),
+
+            ui.download_button(
+                "download_app_settings",
+                "⬇️ Download Settings",
+                class_="btn-secondary"
+            ),
+
+            ui.br(),
+            ui.br(),
+
+            ui.input_file(
+                "restore_app_settings",
+                "Upload settings:",
+                accept=[".json"],
+                multiple=False
+            ),
+
+            ui.br(),
+            
             class_="sidebar-content"
         ),
         width="320px"

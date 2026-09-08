@@ -4,6 +4,7 @@ Server Logic Module for LIANA Results Explorer
 Contains all server-side reactive logic and event handlers.
 """
 
+import json
 import pandas as pd
 import asyncio
 import plotly.graph_objects as go
@@ -79,6 +80,9 @@ def create_server_function(data_handler: DataHandler):
         
         # Last generated AI snapshot URL
         ai_snapshot_relative_url = reactive.Value(None)
+        
+        # Temporarily holds uploaded state while a new splitting key loads
+        pending_restore_state = reactive.Value(None)
         
         
         @reactive.effect
@@ -309,6 +313,37 @@ def create_server_function(data_handler: DataHandler):
                     
                     ui.notification_show(f"✅ Successfully loaded {splitting_key} analysis with {len(results)} datasets", type="success")
                     logger.info(f"Splitting key {splitting_key} loaded successfully")
+                                        
+                    # ============================================================
+                    # FINISH PENDING SETTINGS RESTORE
+                    # ============================================================
+
+                    pending_state = (
+                        pending_restore_state.get()
+                    )
+
+                    if pending_state:
+
+                        wanted_key = (
+                            pending_state
+                            .get("data_navigation", {})
+                            .get("splitting_key")
+                        )
+
+                        if wanted_key == splitting_key:
+
+                            apply_restored_state(
+                                pending_state
+                            )
+
+                            pending_restore_state.set(
+                                None
+                            )
+
+                            ui.notification_show(
+                                "✓ Saved dashboard state restored.",
+                                type="success"
+                            )
                     
                 except Exception as e:
                     error_msg = f"❌ Error loading splitting key data: {str(e)}"
@@ -500,6 +535,67 @@ def create_server_function(data_handler: DataHandler):
             )
 
             return condition_a, condition_b
+        
+        def build_restorable_state():
+            """Build a machine-readable representation of the
+            Exact dashboard settings required to recreate the current state."""
+
+            return {
+                "kind": "liana_results_explorer_state",
+                "schema_version": "1.0",
+
+                "data_navigation": {
+                    "splitting_key": input.splitting_key(),
+                    "contrast": input.contrast()
+                },
+
+                "filters": {
+                    "logfc_threshold": input.logfc_threshold(),
+                    "lrscore_threshold": input.lrscore_threshold(),
+                    "specificity_threshold": input.specificity_threshold(),
+                    "min_source_cells": input.min_source_cells(),
+                    "min_target_cells": input.min_target_cells(),
+                    "source_types": list(input.source_types() or []),
+                    "target_types": list(input.target_types() or [])
+                },
+
+                "overview": {
+                    "interaction_top_n": input.overview_interaction_top_n(),
+                    "apply_filters": input.overview_apply_filters(),
+                    "condition_comparison": input.overview_condition_comparison(),
+                    "cell_metric": input.overview_cell_metric(),
+                    "cell_mode": input.overview_cell_mode(),
+                    "cell_top_n": input.overview_cell_top_n(),
+                    "lr_metric": input.overview_lr_diff_metric(),
+                    "lr_top_n": input.overview_lr_diff_top_n(),
+                    "lr_apply_filters": input.overview_lr_diff_apply_filters()
+                },
+
+                "network": {
+                    "mode": input.network_options(),
+                    "top_n": input.network_top_n(),
+                    "layout": input.network_layout(),
+                    "cell_count_top_n": input.cell_count_network_top_n()
+                },
+
+                "heatmap": {
+                    "metric": input.heatmap_metric(),
+                    "colorscale": input.colorscale(),
+                    "show_values": input.show_heatmap_values()
+                },
+
+                "ligand_receptor": {
+                    "top_n": input.top_n_interactions(),
+                    "dotplot_color": input.dotplot_color(),
+                    "boxplot_metric": input.lr_boxplot_metric(),
+                    "boxplot_top_n": input.lr_boxplot_top_n()
+                },
+
+                "data_table": {
+                    "rows": input.table_rows(),
+                    "search": input.table_search()
+                }
+            }
         
         def build_ai_snapshot_payload():
             """
@@ -737,6 +833,8 @@ def create_server_function(data_handler: DataHandler):
                     )
                 ]
             }
+            
+            payload["restorable_state"] = build_restorable_state()
 
             # ========================================================
             # FILTERED DATA
@@ -1421,7 +1519,326 @@ def create_server_function(data_handler: DataHandler):
                     f"Could not create AI snapshot: {e}",
                     type="error"
                 )
-                
+        
+        @output
+        @render.download(
+            filename=lambda: (
+                f"IBD_LIANA_settings_"
+                f"{input.splitting_key() or 'analysis'}_"
+                f"{input.contrast() or 'contrast'}.json"
+            )
+        )
+        def download_app_settings():
+
+            state = build_restorable_state()
+
+            yield json.dumps(
+                state,
+                indent=2,
+                ensure_ascii=False
+            )
+        
+        def apply_restored_state(state):
+            """Apply a previously saved dashboard state."""
+
+            filters = state.get("filters", {})
+            overview = state.get("overview", {})
+            network = state.get("network", {})
+            heatmap = state.get("heatmap", {})
+            lr = state.get("ligand_receptor", {})
+            table = state.get("data_table", {})
+            navigation = state.get("data_navigation", {})
+
+            # --------------------------------------------------------
+            # Contrast
+            # --------------------------------------------------------
+
+            contrast = navigation.get("contrast")
+
+            if contrast in data_handler.results:
+                desired_contrast.set(contrast)
+                ui.update_select(
+                    "contrast",
+                    selected=contrast
+                )
+
+            # --------------------------------------------------------
+            # Sidebar filters
+            # --------------------------------------------------------
+
+            ui.update_slider(
+                "logfc_threshold",
+                value=filters.get("logfc_threshold", 0.5)
+            )
+
+            ui.update_slider(
+                "lrscore_threshold",
+                value=filters.get("lrscore_threshold", 0.9)
+            )
+
+            ui.update_slider(
+                "specificity_threshold",
+                value=filters.get("specificity_threshold", 0.05)
+            )
+
+            ui.update_slider(
+                "min_source_cells",
+                value=filters.get("min_source_cells", 30)
+            )
+
+            ui.update_slider(
+                "min_target_cells",
+                value=filters.get("min_target_cells", 30)
+            )
+
+            ui.update_selectize(
+                "source_types",
+                choices=data_handler.cell_types,
+                selected=filters.get("source_types", [])
+            )
+
+            ui.update_selectize(
+                "target_types",
+                choices=data_handler.cell_types,
+                selected=filters.get("target_types", [])
+            )
+
+            # --------------------------------------------------------
+            # Overview
+            # --------------------------------------------------------
+
+            ui.update_numeric(
+                "overview_interaction_top_n",
+                value=overview.get("interaction_top_n", 50)
+            )
+
+            ui.update_checkbox(
+                "overview_apply_filters",
+                value=overview.get("apply_filters", False)
+            )
+
+            comparison = overview.get("condition_comparison")
+
+            if comparison:
+                ui.update_select(
+                    "overview_condition_comparison",
+                    selected=comparison
+                )
+
+            ui.update_radio_buttons(
+                "overview_cell_metric",
+                selected=overview.get("cell_metric", "lrscore")
+            )
+
+            ui.update_radio_buttons(
+                "overview_cell_mode",
+                selected=overview.get("cell_mode", "top")
+            )
+
+            ui.update_numeric(
+                "overview_cell_top_n",
+                value=overview.get("cell_top_n", 30)
+            )
+
+            ui.update_radio_buttons(
+                "overview_lr_diff_metric",
+                selected=overview.get("lr_metric", "lrscore")
+            )
+
+            ui.update_numeric(
+                "overview_lr_diff_top_n",
+                value=overview.get("lr_top_n", 30)
+            )
+
+            ui.update_checkbox(
+                "overview_lr_diff_apply_filters",
+                value=overview.get("lr_apply_filters", False)
+            )
+
+            # --------------------------------------------------------
+            # Network
+            # --------------------------------------------------------
+
+            ui.update_radio_buttons(
+                "network_options",
+                selected=network.get("mode", "all")
+            )
+
+            ui.update_numeric(
+                "network_top_n",
+                value=network.get("top_n", 50)
+            )
+
+            ui.update_select(
+                "network_layout",
+                selected=network.get("layout", "spring")
+            )
+
+            ui.update_slider(
+                "cell_count_network_top_n",
+                value=network.get("cell_count_top_n", 30)
+            )
+
+            # --------------------------------------------------------
+            # Heatmap
+            # --------------------------------------------------------
+
+            ui.update_radio_buttons(
+                "heatmap_metric",
+                selected=heatmap.get("metric", "interaction_count")
+            )
+
+            ui.update_select(
+                "colorscale",
+                selected=heatmap.get("colorscale", "Blues")
+            )
+
+            ui.update_checkbox(
+                "show_heatmap_values",
+                value=heatmap.get("show_values", False)
+            )
+
+            # --------------------------------------------------------
+            # Ligand–receptor tab
+            # --------------------------------------------------------
+
+            ui.update_slider(
+                "top_n_interactions",
+                value=lr.get("top_n", 20)
+            )
+
+            ui.update_radio_buttons(
+                "dotplot_color",
+                selected=lr.get("dotplot_color", "specificity_rank")
+            )
+
+            ui.update_select(
+                "lr_boxplot_metric",
+                selected=lr.get("boxplot_metric", "lrscore")
+            )
+
+            ui.update_numeric(
+                "lr_boxplot_top_n",
+                value=lr.get("boxplot_top_n", 20)
+            )
+
+            # --------------------------------------------------------
+            # Data table
+            # --------------------------------------------------------
+
+            ui.update_numeric(
+                "table_rows",
+                value=table.get("rows", 100)
+            )
+
+            ui.update_text(
+                "table_search",
+                value=table.get("search", "")
+            )
+        
+        @reactive.effect
+        @reactive.event(input.restore_app_settings)
+        def restore_app_settings():
+
+            uploaded = input.restore_app_settings()
+
+            if not uploaded:
+                return
+
+            try:
+
+                file_path = uploaded[0]["datapath"]
+
+                with open(
+                    file_path,
+                    "r",
+                    encoding="utf-8"
+                ) as file:
+                    uploaded_json = json.load(file)
+
+                # ----------------------------------------------------
+                # Support BOTH file types:
+                #
+                # 1. small downloaded settings file
+                # 2. complete AI snapshot containing restorable_state
+                # ----------------------------------------------------
+
+                if "restorable_state" in uploaded_json:
+                    state = uploaded_json["restorable_state"]
+                else:
+                    state = uploaded_json
+
+                if (
+                    state.get("kind")
+                    != "liana_results_explorer_state"
+                ):
+                    raise ValueError(
+                        "This is not a valid LIANA settings file."
+                    )
+
+                target_splitting_key = (
+                    state
+                    .get("data_navigation", {})
+                    .get("splitting_key")
+                )
+
+                # Save until correct dataset has finished loading
+                pending_restore_state.set(state)
+
+                # ----------------------------------------------------
+                # Different analysis type:
+                # first load it, THEN restore the remaining settings.
+                # ----------------------------------------------------
+
+                if (
+                    target_splitting_key
+                    and target_splitting_key
+                    != input.splitting_key()
+                ):
+
+                    if (
+                        target_splitting_key
+                        not in data_handler.splitting_keys
+                    ):
+                        raise ValueError(
+                            f"Analysis type '{target_splitting_key}' "
+                            "is not available in this app."
+                        )
+
+                    ui.update_select(
+                        "splitting_key",
+                        selected=target_splitting_key
+                    )
+
+                    ui.notification_show(
+                        "Loading saved analysis state...",
+                        type="message"
+                    )
+
+                    return
+
+                # Same splitting key is already loaded
+                apply_restored_state(state)
+                pending_restore_state.set(None)
+
+                ui.notification_show(
+                    "✓ Settings restored successfully.",
+                    type="success"
+                )
+
+            except Exception as e:
+
+                pending_restore_state.set(None)
+
+                logger.exception(
+                    "Failed to restore app settings"
+                )
+
+                ui.notification_show(
+                    f"Could not restore settings: {e}",
+                    type="error"
+                )
+           
         @output
         @render.ui
         def ai_snapshot_link():
