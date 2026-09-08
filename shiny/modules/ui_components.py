@@ -767,6 +767,22 @@ def create_app_styles() -> ui.TagChild:
                 word-break: break-all;
                 font-size: 0.85em;
             }
+            /* File upload in narrow sidebar */
+            .sidebar-content .shiny-input-container:has(input[type="file"]) {
+                margin-bottom: 18px;
+            }
+
+            .sidebar-content .progress {
+                height: auto;
+                min-height: 20px;
+                overflow: visible;
+            }
+
+            .sidebar-content .progress-bar {
+                min-height: 20px;
+                line-height: 20px;
+                white-space: normal;
+            }
             
             /* Custom scrollbar styling */
             .sidebar-content::-webkit-scrollbar,
