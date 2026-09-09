@@ -2574,27 +2574,31 @@ def create_server_function(data_handler: DataHandler):
             """
             Plot 3:
             Top N ligand-receptor differences.
-
-            Metric options:
-                lrscore
-                interaction_count
-
-            Sidebar filtering is independent from Top N.
             """
+
+            # Same startup dependency as Plot 1
+            counts = interaction_counts_state.get()
+
+            if not counts:
+                fig = go.Figure()
+                fig.add_annotation(
+                    text="Loading condition data...",
+                    x=0.5,
+                    y=0.5,
+                    xref="paper",
+                    yref="paper",
+                    showarrow=False
+                )
+                return fig
 
             (
                 condition_a,
                 condition_b
             ) = get_selected_overview_conditions()
 
-            if (
-                not condition_a
-                or not condition_b
-            ):
+            if not condition_a or not condition_b:
                 return go.Figure()
 
-            # Independent checkbox:
-            # Top N is ALWAYS applied.
             use_filters = (
                 input.overview_lr_diff_apply_filters()
             )
@@ -2622,20 +2626,11 @@ def create_server_function(data_handler: DataHandler):
             )
 
             return create_lr_difference_barplot(
-
-                condition_results[
-                    condition_a
-                ],
-
-                condition_results[
-                    condition_b
-                ],
-
+                condition_results[condition_a],
+                condition_results[condition_b],
                 condition_a=condition_a,
                 condition_b=condition_b,
-
                 metric=metric,
-
                 top_n=top_n
             )
             

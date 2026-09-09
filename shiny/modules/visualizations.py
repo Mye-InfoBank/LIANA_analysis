@@ -914,7 +914,7 @@ def create_lr_boxplot(
             "lr_pair": pair_order
         },
 
-        points="outliers",
+        points="all",
 
         hover_data={
             "ligand_complex": True,
@@ -2118,6 +2118,11 @@ def create_lr_difference_barplot(
     Top N always means the LR pairs with the largest absolute
     difference.
     """
+    
+    plot_height = max(
+        600,
+        (top_n or 30) * 24
+    )
 
     # ============================================================
     # LRscore difference
@@ -2132,21 +2137,14 @@ def create_lr_difference_barplot(
         )
 
         if matched.empty:
-
             fig = go.Figure()
-
             fig.add_annotation(
                 text="No matched interactions available",
-                x=0.5,
-                y=0.5,
-                xref="paper",
-                yref="paper",
+                x=0.5, y=0.5,
+                xref="paper", yref="paper",
                 showarrow=False
             )
-
             return fig
-
-        delta_col = "delta_lrscore"
 
         matched["cell_context"] = (
             matched["source"].astype(str)
@@ -2154,58 +2152,118 @@ def create_lr_difference_barplot(
             + matched["target"].astype(str)
         )
 
-        summary = (
+        matched["lr_pair"] = (
+            matched["ligand_complex"].astype(str)
+            + " → "
+            + matched["receptor_complex"].astype(str)
+        )
+
+        matched = matched.replace(
+            [np.inf, -np.inf],
+            np.nan
+        ).dropna(
+            subset=["delta_lrscore"]
+        )
+
+        # Rank LR pairs by absolute median ΔLRscore
+        ranking = (
             matched
-            .groupby(
-                [
-                    "ligand_complex",
-                    "receptor_complex"
-                ]
+            .groupby("lr_pair")["delta_lrscore"]
+            .median()
+        )
+
+        ranking = (
+            ranking
+            .reindex(
+                ranking.abs()
+                .sort_values(ascending=False)
+                .index
             )
-            .agg(
-                plot_value=(
-                    delta_col,
-                    "median"
-                ),
+        )
 
-                cell_contexts=(
-                    "cell_context",
-                    "nunique"
-                ),
+        if top_n is not None and top_n > 0:
+            selected_pairs = ranking.head(top_n).index
+            matched = matched[
+                matched["lr_pair"].isin(selected_pairs)
+            ].copy()
+        else:
+            selected_pairs = ranking.index
 
-                matched_interactions=(
-                    delta_col,
-                    "size"
-                )
+        # Order boxes by their median difference
+        pair_order = (
+            matched
+            .groupby("lr_pair")["delta_lrscore"]
+            .median()
+            .sort_values(ascending=True)
+            .index
+            .tolist()
+        )
+
+        fig = px.box(
+            matched,
+            x="delta_lrscore",
+            y="lr_pair",
+            category_orders={
+                "lr_pair": pair_order
+            },
+            points="all",
+            hover_name="cell_context",
+            hover_data={
+                "source": True,
+                "target": True,
+                "ligand_complex": True,
+                "receptor_complex": True,
+                "delta_lrscore":":.3f"
+            }
+        )
+
+        fig.update_traces(
+            jitter=0.28,
+            pointpos=0,
+            marker=dict(
+                size=5,
+                opacity=0.55
             )
-            .reset_index()
         )
 
-        x_title = (
-            f"Median ΔLRscore "
-            f"({condition_a} − {condition_b})"
+        fig.add_vline(
+            x=0,
+            line_dash="dash"
         )
 
-        hovertemplate = (
-            "<b>%{y}</b><br>"
-            "Median ΔLRscore: %{x:.3f}<br>"
-            "Matched cell-type contexts: "
-            "%{customdata[0]}<br>"
-            "Matched interactions: "
-            "%{customdata[1]}"
-            "<extra></extra>"
+        fig.update_layout(
+            title=(
+                f"Ligand–Receptor Changes (LRscore): "
+                f"{condition_a} vs {condition_b}"
+            ),
+
+            xaxis_title=(
+                f"ΔLRscore ({condition_a} − {condition_b})"
+            ),
+
+            yaxis_title="Ligand → Receptor",
+
+            height=plot_height,
+
+            margin=dict(
+                l=200,
+                r=120,
+                t=120,
+                b=260
+            ),
+
+            showlegend=False
         )
 
-        customdata = np.stack(
-            [
-                summary["cell_contexts"],
-                summary["matched_interactions"]
-            ],
-            axis=-1
+        fig.update_xaxes(automargin=True)
+        fig.update_yaxes(
+            tickmode="array",
+            tickvals=pair_order,
+            ticktext=pair_order,
+            automargin=True
         )
 
-        metric_title = "LRscore"
-
+        return fig
     # ============================================================
     # Interaction-context count difference
     # ============================================================
@@ -2490,10 +2548,7 @@ def create_lr_difference_barplot(
 
         yaxis_title="Ligand → Receptor",
 
-        height=max(
-            600,
-            len(summary) * 24
-        ),
+        height=plot_height,
 
         margin=dict(
             l=260,
