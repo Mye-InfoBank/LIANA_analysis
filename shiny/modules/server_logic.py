@@ -1858,9 +1858,9 @@ def create_server_function(data_handler: DataHandler):
                 ),
 
                 ui.tags.a(
-                    "Open AI snapshot",
+                    "Download AI snapshot",
                     href=relative_url,
-                    target="_blank"
+                    download=relative_url.rsplit("/", 1)[-1]
                 ),
 
                 ui.br(),
