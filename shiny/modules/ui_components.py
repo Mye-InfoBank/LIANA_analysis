@@ -8,6 +8,12 @@ from shiny import ui
 from shinywidgets import output_widget
 from typing import List, Optional
 
+
+def _with_tooltip(content: ui.TagChild, tooltip: str) -> ui.TagChild:
+    """Wrap a control so the browser shows a hover tooltip for it."""
+    return ui.div(content, title=tooltip, class_="tooltip-control")
+
+
 def create_app_header() -> ui.TagChild:
     """Create the application header section."""
     return ui.div(
@@ -38,33 +44,68 @@ def create_sidebar(data_dir: str = "/nfs/data/COST_IBD/downstream_tasks/interact
         ui.div(
             # Core Navigation Section
             ui.h4("🗂️ Data Navigation"),
-            ui.input_select("splitting_key", "Analysis Type:", 
-                           choices=splitting_keys, selected=None),
+            _with_tooltip(
+                ui.input_select("splitting_key", "Analysis Type:",
+                               choices=splitting_keys, selected=None),
+                "Select the metadata used to organize the LIANA results "
+                "(e.g. condition). This determines which set of comparisons is available."
+            ),
             ui.br(),
-            ui.input_select("contrast", "Select Contrast:", 
-                           choices=conditions, selected=None),
+            _with_tooltip(
+                ui.input_select("contrast", "Select Contrast:",
+                               choices=conditions, selected=None),
+                "Select the specific condition or result set to inspect."
+            ),
             ui.br(),
             
             # Data Filters Section
             ui.h4("🔍 Data Filters"),
-            ui.input_slider("logfc_threshold", "LogFC Threshold:", 
-                           min=0, max=2.5, value=0.5, step=0.1),
-            ui.input_slider("lrscore_threshold", "LRscore Threshold:", 
-                           min=0, max=1, value=0.9, step=0.01),
-            ui.input_slider("specificity_threshold", "Specificity Rank Threshold:", 
-                           min=0, max=0.2, value=0.05, step=0.01),
-            ui.input_slider("min_source_cells", "Min Source Cells:", 
+            _with_tooltip(
+                ui.input_slider("logfc_threshold", "LogFC Threshold:",
+                               min=0, max=2.5, value=0.5, step=0.1),
+                "Ligand-receptor enrichment within the selected source → target context. "
+                "Higher values indicate stronger enrichment; a higher threshold is stricter."
+            ),
+            _with_tooltip(
+                ui.input_slider("lrscore_threshold", "LRscore Threshold:",
+                               min=0, max=1, value=0.9, step=0.01),
+                "Interaction magnitude score. Higher values indicate stronger inferred "
+                "ligand-receptor communication; a higher threshold is stricter."
+            ),
+            _with_tooltip(
+                ui.input_slider("specificity_threshold", "Specificity Rank Threshold:",
+                               min=0, max=0.2, value=0.05, step=0.01),
+                "LIANA Consensus specificity rank for the interaction. Values closer to 0 indicate "
+                "greater specificity; a lower threshold is stricter."
+            ),
+            _with_tooltip(
+                ui.input_slider("min_source_cells", "Min Source Cells:",
                 min=0, max=500, value=30, step=10),
-            ui.input_slider("min_target_cells", "Min Target Cells:", 
+                "Minimum number of cells in the ligand-producing source population. "
+                "Higher values require stronger cell-count support and exclude rare source groups."
+            ),
+            _with_tooltip(
+                ui.input_slider("min_target_cells", "Min Target Cells:",
                 min=0, max=500, value=30, step=10),
+                "Minimum number of cells in the receptor-expressing target population. "
+                "Higher values require stronger cell-count support and exclude rare target groups."
+            ),
             ui.br(),
             
             # Cell Type Selection Section
             ui.h4("🎯 Cell Type Selection"),
-            ui.input_selectize("source_types", "Source Cell Types:", 
-                              choices=[], selected=[], multiple=True),
-            ui.input_selectize("target_types", "Target Cell Types:", 
-                              choices=[], selected=[], multiple=True),
+            _with_tooltip(
+                ui.input_selectize("source_types", "Source Cell Types:",
+                                  choices=[], selected=[], multiple=True),
+                "Restrict results to selected ligand-producing source cell populations. "
+                "Leave empty to include all source cell types."
+            ),
+            _with_tooltip(
+                ui.input_selectize("target_types", "Target Cell Types:",
+                                  choices=[], selected=[], multiple=True),
+                "Restrict results to selected receptor-expressing target cell populations. "
+                "Leave empty to include all target cell types."
+            ),
             
             # ============================================================
             # AI SNAPSHOT
@@ -134,25 +175,34 @@ def create_network_tab() -> ui.TagChild:
                 ui.h5("Network Visualization Options"),
                 ui.div(
                     ui.div(
-                        ui.input_radio_buttons("network_options", "Display Options:",
-                                             choices={
-                                                 "all": "All Interactions",
-                                                 "top": "Top Interactions Only"
-                                             }, selected="all", inline=True),
+                        _with_tooltip(
+                            ui.input_radio_buttons("network_options", "Display Options:",
+                                                 choices={
+                                                     "all": "All Interactions",
+                                                     "top": "Top Interactions Only"
+                                                 }, selected="all", inline=True),
+                            "Choose whether to show the full interaction network or only the top N interactions. Top N is more focused; All is more complete."
+                        ),
                         class_="col-md-6"
                     ),
                     ui.div(
-                        ui.input_numeric("network_top_n", "Top N (if selected):", 
-                                       value=50, min=10, max=200, step=10),
+                        _with_tooltip(
+                            ui.input_numeric("network_top_n", "Top N (if selected):",
+                                           value=50, min=10, max=200, step=10),
+                            "Number of interactions to show when 'Top Interactions Only' is selected. Lower is stricter and shows fewer interactions."
+                        ),
                         class_="col-md-3"
                     ),
                     ui.div(
-                        ui.input_select("network_layout", "Layout:",
-                                       choices={
-                                           "spring": "Spring Layout",
-                                           "circular": "Circular Layout", 
-                                           "kamada_kawai": "Kamada-Kawai Layout"
-                                       }, selected="spring"),
+                        _with_tooltip(
+                            ui.input_select("network_layout", "Layout:",
+                                           choices={
+                                               "spring": "Spring Layout",
+                                               "circular": "Circular Layout",
+                                               "kamada_kawai": "Kamada-Kawai Layout"
+                                           }, selected="spring"),
+                            "Choose the network layout style. This changes the display only and does not affect filtering."
+                        ),
                         class_="col-md-3"
                     ),
                     class_="row mb-3"
@@ -173,13 +223,16 @@ def create_network_tab() -> ui.TagChild:
                 "This network shows the top N most connected cell types after filtering.",
                 class_="text-muted"
             ),
-            ui.input_slider(
-                "cell_count_network_top_n",
-                "Top N connected cell types to show:",
-                min=5,
-                max=100,
-                value=30,
-                step=5
+            _with_tooltip(
+                ui.input_slider(
+                    "cell_count_network_top_n",
+                    "Top N connected cell types to show:",
+                    min=5,
+                    max=100,
+                    value=30,
+                    step=5
+                ),
+                "Controls how many cell types remain in the cell-count-aware network. Lower is stricter and keeps only the most connected cell types."
             ),
             ui.div(
                 output_widget("network_cell_count_plot"),
@@ -197,27 +250,36 @@ def create_heatmap_tab() -> ui.TagChild:
                 ui.h5("Heatmap Options"),
                 ui.div(
                     ui.div(
-                        ui.input_radio_buttons("heatmap_metric", "Metric:", 
-                                             choices={
-                                                 "interaction_count": "Interaction Count",
-                                                 "lrscore": "LRscore", 
-                                                 "lr_logfc": "LogFC",
-                                                 "lr_means": "LR Means"
-                                             }, selected="interaction_count", inline=True),
+                        _with_tooltip(
+                            ui.input_radio_buttons("heatmap_metric", "Metric:",
+                                                 choices={
+                                                     "interaction_count": "Interaction Count",
+                                                     "lrscore": "LRscore",
+                                                     "lr_logfc": "LogFC",
+                                                     "lr_means": "LR Means"
+                                                 }, selected="interaction_count", inline=True),
+                            "Choose the heatmap summary metric. This changes what the heatmap displays; it is not a threshold filter."
+                        ),
                         class_="col-md-6"
                     ),
                     ui.div(
-                        ui.input_checkbox("show_heatmap_values", "Show Values", value=False),
+                        _with_tooltip(
+                            ui.input_checkbox("show_heatmap_values", "Show Values", value=False),
+                            "Show the numeric value in each heatmap cell. This is a display option only."
+                        ),
                         class_="col-md-3"
                     ),
                     ui.div(
-                        ui.input_select("colorscale", "Color Scheme:",
-                                       choices={
-                                           "Blues": "Blues",
-                                           "Viridis": "Viridis",
-                                           "Plasma": "Plasma",
-                                           "Cividis": "Cividis"
-                                       }, selected="Blues"),
+                        _with_tooltip(
+                            ui.input_select("colorscale", "Color Scheme:",
+                                           choices={
+                                               "Blues": "Blues",
+                                               "Viridis": "Viridis",
+                                               "Plasma": "Plasma",
+                                               "Cividis": "Cividis"
+                                           }, selected="Blues"),
+                            "Choose the heatmap color palette. This changes the look only and does not affect filtering."
+                        ),
                         class_="col-md-3"
                     ),
                     class_="row mb-3"
@@ -250,25 +312,31 @@ def create_dotplot_tab() -> ui.TagChild:
             ),
 
             ui.div(
-                ui.input_slider(
-                    "top_n_interactions",
-                    "Top N Interactions:",
-                    min=5,
-                    max=200,
-                    value=20,
-                    step=5
+                _with_tooltip(
+                    ui.input_slider(
+                        "top_n_interactions",
+                        "Top N Interactions:",
+                        min=5,
+                        max=200,
+                        value=20,
+                        step=5
+                    ),
+                    "Controls how many ligand-receptor interactions appear in the dot plot. Lower is stricter and shows fewer interactions."
                 ),
 
-                ui.input_radio_buttons(
-                    "dotplot_color",
-                    "Color By:",
-                    choices={
-                        "magnitude_rank": "Magnitude Rank",
-                        "specificity_rank": "Specificity Rank",
-                        "lrscore": "LRscore"
-                    },
-                    selected="specificity_rank",
-                    inline=True
+                _with_tooltip(
+                    ui.input_radio_buttons(
+                        "dotplot_color",
+                        "Color By:",
+                        choices={
+                            "magnitude_rank": "Magnitude Rank",
+                            "specificity_rank": "Specificity Rank",
+                            "lrscore": "LRscore"
+                        },
+                        selected="specificity_rank",
+                        inline=True
+                    ),
+                    "Choose the metric used for dot color. Lower is better for rank-based metrics; higher is better for lrscore."
                 ),
 
                 class_="mb-3"
@@ -292,26 +360,32 @@ def create_dotplot_tab() -> ui.TagChild:
 
             ui.div(
 
-                ui.input_select(
-                    "lr_boxplot_metric",
-                    "Metric:",
-                    choices={
-                        "lrscore": "LRscore",
-                        "lr_means": "LR Means",
-                        "lr_logfc": "LogFC Specificity Score",
-                        "specificity_rank": "Consensus Specificity Rank",
-                        "magnitude_rank": "Consensus Magnitude Rank"
-                    },
-                    selected="lrscore"
+                _with_tooltip(
+                    ui.input_select(
+                        "lr_boxplot_metric",
+                        "Metric:",
+                        choices={
+                            "lrscore": "LRscore",
+                            "lr_means": "LR Means",
+                            "lr_logfc": "LogFC Specificity Score",
+                            "specificity_rank": "Consensus Specificity Rank",
+                            "magnitude_rank": "Consensus Magnitude Rank"
+                        },
+                        selected="lrscore"
+                    ),
+                    "Choose the metric summarized in the boxplot. For rank metrics, lower is better; for score metrics, higher is better."
                 ),
 
-                ui.input_numeric(
-                    "lr_boxplot_top_n",
-                    "Top N Ligand–Receptor Pairs:",
-                    value=20,
-                    min=5,
-                    max=100,
-                    step=5
+                _with_tooltip(
+                    ui.input_numeric(
+                        "lr_boxplot_top_n",
+                        "Top N Ligand–Receptor Pairs:",
+                        value=20,
+                        min=5,
+                        max=100,
+                        step=5
+                    ),
+                    "Controls how many ligand-receptor pairs appear in the boxplot. Lower is stricter and shows fewer pairs."
                 ),
 
                 class_="mb-3 p-2 border rounded"
@@ -335,26 +409,38 @@ def create_comparison_tab() -> ui.TagChild:
                 ui.h5("Comparison Settings"),
                 ui.div(
                     ui.div(
-                        ui.input_select("comparison_source", "Source Cell Type:", 
-                                       choices=[]),
+                        _with_tooltip(
+                            ui.input_select("comparison_source", "Source Cell Type:",
+                                           choices=[]),
+                            "Choose the source cell type for the condition comparison. This is the ligand-producing side of the pair."
+                        ),
                         class_="col-md-6"
                     ),
                     ui.div(
-                        ui.input_select("comparison_target", "Target Cell Type:", 
-                                       choices=[]),
+                        _with_tooltip(
+                            ui.input_select("comparison_target", "Target Cell Type:",
+                                           choices=[]),
+                            "Choose the target cell type for the condition comparison. This is the receptor-expressing side of the pair."
+                        ),
                         class_="col-md-6"
                     ),
                     class_="row mb-3"
                 ),
                 ui.div(
-                    ui.input_radio_buttons("comparison_metric", "Compare By:",
-                                         choices={
-                                             "lr_means": "LR Means",
-                                             "lrscore": "LRscore",
-                                             "lr_logfc": "LogFC"
-                                         }, selected="lr_means", inline=True),
-                    ui.input_numeric("comparison_max_interactions", "Max interactions per condition:", 
-                                   value=100, min=10, max=1000, step=10),
+                    _with_tooltip(
+                        ui.input_radio_buttons("comparison_metric", "Compare By:",
+                                             choices={
+                                                 "lr_means": "LR Means",
+                                                 "lrscore": "LRscore",
+                                                 "lr_logfc": "LogFC"
+                                             }, selected="lr_means", inline=True),
+                        "Choose which metric to compare across conditions. For rank-like or score metrics, higher is better; for logFC, higher enrichment is better."
+                    ),
+                    _with_tooltip(
+                        ui.input_numeric("comparison_max_interactions", "Max interactions per condition:",
+                                       value=100, min=10, max=1000, step=10),
+                        "Limits how many interactions are shown per condition. Lower is stricter and keeps the plot lighter."
+                    ),
                     class_="mb-3"
                 ),
                 class_="mb-3 p-2 border rounded"
@@ -370,18 +456,27 @@ def create_volcano_tab() -> ui.TagChild:
         "🌋 Volcano Plot",
         ui.div(
             ui.div(
-                ui.input_select("volcano_x", "X-axis (Effect Size):",
-                               choices={
-                                   "lr_logfc": "LogFC",
-                                   "lr_means": "LR Means"
-                               }, selected="lr_logfc"),
-                ui.input_select("volcano_y", "Y-axis (Significance):",
-                               choices={
-                                   "lrscore": "LRscore",
-                                   "specificity_rank": "Specificity Rank"
-                               }, selected="lrscore"),
-                ui.input_numeric("volcano_threshold", "Significance Threshold:",
-                               value=0.05, min=0.001, max=0.1, step=0.001),
+                _with_tooltip(
+                    ui.input_select("volcano_x", "X-axis (Effect Size):",
+                                   choices={
+                                       "lr_logfc": "LogFC",
+                                       "lr_means": "LR Means"
+                                   }, selected="lr_logfc"),
+                    "Choose the volcano plot effect-size axis. Higher values mean stronger effect size."
+                ),
+                _with_tooltip(
+                    ui.input_select("volcano_y", "Y-axis (Significance):",
+                                   choices={
+                                       "lrscore": "LRscore",
+                                       "specificity_rank": "Specificity Rank"
+                                   }, selected="lrscore"),
+                    "Choose the volcano plot significance axis. For lrscore, higher is better; for specificity_rank, lower is better."
+                ),
+                _with_tooltip(
+                    ui.input_numeric("volcano_threshold", "Significance Threshold:",
+                                   value=0.05, min=0.001, max=0.1, step=0.001),
+                    "Controls the cutoff used to mark significant points. Lower is stricter."
+                ),
                 class_="mb-3"
             ),
             output_widget("volcano_plot"),
@@ -395,12 +490,21 @@ def create_data_table_tab() -> ui.TagChild:
         "📋 Data Table", 
         ui.div(
             ui.div(
-                ui.input_numeric("table_rows", "Rows to show:", 
-                               value=100, min=10, max=1000, step=10),
-                ui.input_text("table_search", "Search interactions:",
-                            placeholder="Enter ligand, receptor, or cell type"),
-                ui.input_action_button("export_data", "Export Filtered Data", 
-                                     class_="btn-secondary"),
+                _with_tooltip(
+                    ui.input_numeric("table_rows", "Rows to show:",
+                                   value=100, min=10, max=1000, step=10),
+                    "Controls how many rows appear in the data table. Lower is stricter and shows fewer rows at once."
+                ),
+                _with_tooltip(
+                    ui.input_text("table_search", "Search interactions:",
+                                placeholder="Enter ligand, receptor, or cell type"),
+                    "Search within the filtered interaction table. This does not change the thresholds; it only narrows the table view."
+                ),
+                _with_tooltip(
+                    ui.input_action_button("export_data", "Export Filtered Data",
+                                         class_="btn-secondary"),
+                    "Download the currently filtered interaction table."
+                ),
                 class_="mb-3"
             ),
             ui.output_data_frame("interactions_table"),
@@ -472,19 +576,25 @@ def create_data_explorer_tab() -> ui.TagChild:
                     class_="text-muted"
                 ),
 
-                ui.input_numeric(
-                    "overview_interaction_top_n",
-                    "Top N interactions:",
-                    value=50,
-                    min=10,
-                    max=200,
-                    step=10
+                _with_tooltip(
+                    ui.input_numeric(
+                        "overview_interaction_top_n",
+                        "Top N interactions:",
+                        value=50,
+                        min=10,
+                        max=200,
+                        step=10
+                    ),
+                    "Controls how many interactions appear in the overview plot. Lower is stricter and shows fewer interactions."
                 ),
                 
-                ui.input_checkbox(
-                    "overview_apply_filters",
-                    "Apply sidebar filters",
-                    value=False
+                _with_tooltip(
+                    ui.input_checkbox(
+                        "overview_apply_filters",
+                        "Apply sidebar filters",
+                        value=False
+                    ),
+                    "If enabled, the overview plot uses the sidebar thresholds. If disabled, it shows all data for the selected contrast."
                 ),
 
                 ui.output_ui("overview_condition_dotplot_container"),
@@ -503,10 +613,13 @@ def create_data_explorer_tab() -> ui.TagChild:
                     class_="text-muted"
                 ),
 
-                ui.input_select(
-                    "overview_condition_comparison",
-                    "Compare conditions:",
-                    choices={}
+                _with_tooltip(
+                    ui.input_select(
+                        "overview_condition_comparison",
+                        "Compare conditions:",
+                        choices={}
+                    ),
+                    "Select the pair of conditions used for the differential plots below. Choose the biological comparison you want to inspect."
                 ),
 
                 ui.hr(),
@@ -523,39 +636,48 @@ def create_data_explorer_tab() -> ui.TagChild:
                     class_="text-muted"
                 ),
                 
-                ui.input_radio_buttons(
-                    "overview_cell_metric",
-                    "Compare by:",
-                    choices={
-                        "lrscore": "LRscore difference",
-                        "interaction_count": "LR interaction-count difference"
-                    },
-                    selected="lrscore",
-                    inline=True
+                _with_tooltip(
+                    ui.input_radio_buttons(
+                        "overview_cell_metric",
+                        "Compare by:",
+                        choices={
+                            "lrscore": "LRscore difference",
+                            "interaction_count": "LR interaction-count difference"
+                        },
+                        selected="lrscore",
+                        inline=True
+                    ),
+                    "Choose the metric used to compare cell-cell changes. For lrscore, higher difference means stronger change; interaction count reflects how many interactions changed."
                 ),
 
-                ui.input_radio_buttons(
-                    "overview_cell_mode",
-                    "Interactions to include:",
-                    choices={
-                        "all": "All interactions",
-                        "filtered": "Apply sidebar filters",
-                        "top": "Top N most changed cell pairs"
-                    },
-                    selected="top",
-                    inline=True
+                _with_tooltip(
+                    ui.input_radio_buttons(
+                        "overview_cell_mode",
+                        "Interactions to include:",
+                        choices={
+                            "all": "All interactions",
+                            "filtered": "Apply sidebar filters",
+                            "top": "Top N most changed cell pairs"
+                        },
+                        selected="top",
+                        inline=True
+                    ),
+                    "Choose whether to compare all interactions, only sidebar-filtered interactions, or just the top N most changed cell pairs. Top N is the strictest option."
                 ),
 
                 ui.panel_conditional(
                     "input.overview_cell_mode === 'top'",
 
-                    ui.input_numeric(
-                        "overview_cell_top_n",
-                        "Top N cell pairs:",
-                        value=30,
-                        min=10,
-                        max=1000,
-                        step=10
+                    _with_tooltip(
+                        ui.input_numeric(
+                            "overview_cell_top_n",
+                            "Top N cell pairs:",
+                            value=30,
+                            min=10,
+                            max=1000,
+                            step=10
+                        ),
+                        "Limits how many cell pairs are shown in the differential plot. Lower is stricter and shows fewer cell pairs."
                     )
                 ),
 
@@ -575,30 +697,39 @@ def create_data_explorer_tab() -> ui.TagChild:
                     class_="text-muted"
                 ),
 
-                ui.input_radio_buttons(
-                    "overview_lr_diff_metric",
-                    "Compare by:",
-                    choices={
-                        "lrscore": "LRscore difference",
-                        "interaction_count": "Interaction-context count difference"
-                    },
-                    selected="lrscore",
-                    inline=True
+                _with_tooltip(
+                    ui.input_radio_buttons(
+                        "overview_lr_diff_metric",
+                        "Compare by:",
+                        choices={
+                            "lrscore": "LRscore difference",
+                            "interaction_count": "Interaction-context count difference"
+                        },
+                        selected="lrscore",
+                        inline=True
+                    ),
+                    "Choose the metric used to compare ligand-receptor changes. For lrscore, higher difference means stronger change; interaction count reflects context support."
                 ),
 
-                ui.input_numeric(
-                    "overview_lr_diff_top_n",
-                    "Top N most changed LR pairs:",
-                    value=30,
-                    min=10,
-                    max=200,
-                    step=10
+                _with_tooltip(
+                    ui.input_numeric(
+                        "overview_lr_diff_top_n",
+                        "Top N most changed LR pairs:",
+                        value=30,
+                        min=10,
+                        max=200,
+                        step=10
+                    ),
+                    "Limits how many ligand-receptor pairs are shown in the differential plot. Lower is stricter and shows fewer pairs."
                 ),
 
-                ui.input_checkbox(
-                    "overview_lr_diff_apply_filters",
-                    "Apply sidebar filters",
-                    value=False
+                _with_tooltip(
+                    ui.input_checkbox(
+                        "overview_lr_diff_apply_filters",
+                        "Apply sidebar filters",
+                        value=False
+                    ),
+                    "If enabled, the ligand-receptor difference plot uses the sidebar thresholds. If disabled, it shows all data for the selected conditions."
                 ),
 
                 ui.output_ui("overview_lr_difference_plot_container"),
@@ -738,6 +869,9 @@ def create_app_styles() -> ui.TagChild:
             .form-control:focus, .form-select:focus {
                 border-color: #007bff;
                 box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+            }
+            .tooltip-control {
+                cursor: help;
             }
             .alert {
                 border-radius: 10px;
