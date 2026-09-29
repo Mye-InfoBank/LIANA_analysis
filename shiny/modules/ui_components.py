@@ -162,7 +162,7 @@ def create_sidebar(data_dir: str = "/nfs/data/COST_IBD/downstream_tasks/interact
             
             class_="sidebar-content"
         ),
-        width="320px"
+        width="380px"
     )
 
 
@@ -811,14 +811,65 @@ def create_app_styles() -> ui.TagChild:
                 overflow-y: auto;
                 padding: 20px;
                 padding-bottom: 40px;
+                font-size: 1rem;
+            }
+
+            .sidebar-content .shiny-input-container,
+            .sidebar-content .form-control,
+            .sidebar-content .form-select,
+            .sidebar-content .selectize-control {
+                width: 100%;
+                max-width: none;
+            }
+
+            .sidebar h4 {
+                font-size: 1.25rem;
+            }
+
+            .sidebar h5 {
+                font-size: 1.1rem;
+            }
+
+            .sidebar-content label,
+            .sidebar-content .control-label {
+                font-size: 1rem;
+                font-weight: 500;
+            }
+
+            .sidebar-content p,
+            .sidebar-content .text-muted {
+                font-size: 0.95rem;
+                line-height: 1.4;
+            }
+
+            .sidebar-content .form-control,
+            .sidebar-content .form-select,
+            .sidebar-content .selectize-input,
+            .sidebar-content .selectize-dropdown {
+                font-size: 1rem;
+            }
+
+            .sidebar-content .btn {
+                font-size: 0.95rem;
+                padding: 9px 16px;
             }
             .main-content {
                 height: calc(100vh - 120px);
                 overflow: hidden;
-                padding: 20px;
-                padding-bottom: 40px;
+                padding: 12px 16px 40px 16px;
+                width: 100%;
                 display: flex;
                 flex-direction: column;
+                font-size: 1rem;
+            }
+
+            .main-content > div,
+            .main-content .nav,
+            .main-content .nav-tabs,
+            .main-content .tab-content,
+            .main-content .tab-pane {
+                width: 100%;
+                max-width: none;
             }
 
             .main-content .tab-content {
@@ -826,6 +877,34 @@ def create_app_styles() -> ui.TagChild:
                 overflow-x: hidden;
                 flex: 1 1 auto;
                 min-height: 0;
+            }
+
+            .main-content .tab-pane > div {
+                width: 100%;
+                max-width: none;
+            }
+
+            .main-content .shiny-data-frame,
+            .main-content .html-widget,
+            .main-content .shiny-html-output {
+                width: 100% !important;
+                max-width: none !important;
+            }
+
+            .main-content h4 {
+                font-size: 1.35rem;
+                margin-top: 18px;
+                margin-bottom: 10px;
+            }
+
+            .main-content h5 {
+                font-size: 1.15rem;
+            }
+
+            .main-content p,
+            .main-content .text-muted {
+                font-size: 1rem;
+                line-height: 1.5;
             }
             .sidebar h4 {
                 color: #495057;
@@ -852,10 +931,27 @@ def create_app_styles() -> ui.TagChild:
                 padding: 6px 15px;
                 color: white;
             }
-            .nav-tabs .nav-link {
-                border-radius: 20px 20px 0 0;
-                margin-right: 5px;
+            .nav-tabs {
+                display: flex;
+                width: 100%;
             }
+
+            .nav-tabs .nav-item {
+                flex: 1 1 0;
+                text-align: center;
+            }
+
+            .nav-tabs .nav-link {
+                width: 100%;
+                border-radius: 20px 20px 0 0;
+                margin-right: 0;
+                text-align: center;
+                white-space: nowrap;
+                font-size: 1.15rem;
+                font-weight: 500;
+                padding: 12px 16px;
+            }
+
             .nav-tabs .nav-link.active {
                 background: linear-gradient(135deg, #007bff 0%, #0056b3 100%);
                 color: white;
