@@ -10,6 +10,8 @@ services:
     environment:
       - PORT=8080
       - DATA_DIR=/app/results_IBD/colon
+    volumes:
+      - /localssd/cost/downstream/LIANA/results_IBD/colon:/app/results_IBD/colon:ro
     restart: unless-stopped
 
   liana-ileum:
@@ -20,4 +22,6 @@ services:
     environment:
       - PORT=8080
       - DATA_DIR=/app/results_IBD/ileum
+    volumes:
+      - /localssd/cost/downstream/LIANA/results_IBD/ileum:/app/results_IBD/ileum:ro
     restart: unless-stopped

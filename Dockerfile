@@ -6,7 +6,6 @@ COPY environment.yml /app/environment.yml
 RUN conda env create -f /app/environment.yml && conda clean -afy
 
 COPY shiny /app/shiny
-COPY results_IBD /app/results_IBD
 
 ENV PORT=8080
 ENV DATA_DIR=/app/results_IBD/colon

@@ -29,3 +29,5 @@ temp/
 
 # Large generated folders not needed in Docker image
 output/
+# Result data is mounted at runtime, not baked into the image
+results_IBD/

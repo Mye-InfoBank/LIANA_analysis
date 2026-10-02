@@ -5,6 +5,7 @@ Contains all server-side reactive logic and event handlers.
 """
 
 import json
+from datetime import datetime, timezone
 import pandas as pd
 import asyncio
 import plotly.graph_objects as go
@@ -36,9 +37,8 @@ from .utils import (
 )
 
 from .ai_snapshots import (
-    save_ai_snapshot,
     figure_to_dict,
-    cleanup_old_snapshots
+    llm_context
 )
 
 logger = logging.getLogger(__name__)
@@ -53,9 +53,6 @@ def create_server_function(data_handler: DataHandler):
     Returns:
         Server function
     """
-    # Remove expired snapshots whenever the application starts.
-    cleanup_old_snapshots()
-    
     def server(input: Inputs, output: Outputs, session: Session):
         
         # Reactive values for storing app state
@@ -77,9 +74,6 @@ def create_server_function(data_handler: DataHandler):
         
         # Dedicated reactive trigger/data for the Data Explorer count plot
         interaction_counts_state = reactive.Value({})
-        
-        # Last generated AI snapshot URL
-        ai_snapshot_relative_url = reactive.Value(None)
         
         # Temporarily holds uploaded state while a new splitting key loads
         pending_restore_state = reactive.Value(None)
@@ -638,12 +632,18 @@ def create_server_function(data_handler: DataHandler):
 
             payload = {
 
-                "schema_version": "1.0",
+                "schema_version": "1.1",
+
+                "created_at": datetime.now(
+                    timezone.utc
+                ).isoformat(),
 
                 "description": (
                     "Machine-readable snapshot of the current "
                     "IBD LIANA Results Explorer state."
                 ),
+
+                "llm_context": llm_context(),
 
                 "metadata": {
 
@@ -1315,68 +1315,9 @@ def create_server_function(data_handler: DataHandler):
                 and not filtered_df.empty
             ):
 
-                # ----------------------------------------------------
-                # Network
-                # ----------------------------------------------------
-
-                network_df = (
-                    filtered_df
-                )
-
-                if (
-                    input.network_options()
-                    == "top"
-                ):
-
-                    network_df = (
-                        data_handler
-                        .get_top_interactions(
-                            network_df,
-                            n=(
-                                input.network_top_n()
-                                or 50
-                            )
-                        )
-                    )
-
-                figures[
-                    "network"
-                ] = figure_to_dict(
-
-                    create_network_plot(
-
-                        network_df,
-
-                        layout_algorithm=(
-                            input.network_layout()
-                            or "spring"
-                        )
-                    )
-                )
-
-                # ----------------------------------------------------
-                # Cell-count network
-                # ----------------------------------------------------
-
-                figures[
-                    "cell_count_network"
-                ] = figure_to_dict(
-
-                    create_cell_count_network_plot(
-
-                        filtered_df,
-
-                        layout_algorithm=(
-                            input.network_layout()
-                            or "spring"
-                        ),
-
-                        top_n_nodes=(
-                            input.cell_count_network_top_n()
-                            or 30
-                        )
-                    )
-                )
+                # Network plots are deliberately not included: they are
+                # ~1 MB of layout coordinates and add nothing beyond the
+                # interaction tables above.
 
                 # ----------------------------------------------------
                 # Heatmap
@@ -1460,11 +1401,15 @@ def create_server_function(data_handler: DataHandler):
 
             return payload
         
-        @reactive.effect
-        @reactive.event(
-            input.create_ai_snapshot
+        @output
+        @render.download(
+            filename=lambda: (
+                f"IBD_LIANA_ai_snapshot_"
+                f"{input.splitting_key() or 'analysis'}_"
+                f"{input.contrast() or 'contrast'}.json"
+            )
         )
-        def create_ai_snapshot():
+        def download_ai_snapshot():
 
             if not app_state.get()[
                 "data_loaded"
@@ -1475,51 +1420,18 @@ def create_server_function(data_handler: DataHandler):
                     type="warning"
                 )
 
-                return
-
-            try:
-
-                payload = (
-                    build_ai_snapshot_payload()
+                raise RuntimeError(
+                    "LIANA data are not loaded yet."
                 )
 
-                snapshot_id = (
-                    save_ai_snapshot(
-                        payload
-                    )
-                )
+            # Compact JSON: the embedded Plotly figures are large.
+            yield json.dumps(
+                build_ai_snapshot_payload(),
+                ensure_ascii=False,
+                separators=(",", ":"),
+                default=str
+            )
 
-                relative_url = (
-                    f"ai_snapshots/"
-                    f"{snapshot_id}.json"
-                )
-
-                ai_snapshot_relative_url.set(
-                    relative_url
-                )
-                
-
-                ui.update_action_button(
-                    "create_ai_snapshot",
-                    label="✓ Snapshot Created!"
-                )
-
-                ui.notification_show(
-                    "AI snapshot created successfully.",
-                    type="success"
-                )
-
-            except Exception as e:
-
-                logger.exception(
-                    "Failed to create AI snapshot"
-                )
-
-                ui.notification_show(
-                    f"Could not create AI snapshot: {e}",
-                    type="error"
-                )
-        
         @output
         @render.download(
             filename=lambda: (
@@ -1839,204 +1751,6 @@ def create_server_function(data_handler: DataHandler):
                     type="error"
                 )
            
-        @output
-        @render.ui
-        def ai_snapshot_link():
-
-            relative_url = (
-                ai_snapshot_relative_url.get()
-            )
-
-            if not relative_url:
-                return None
-
-            return ui.div(
-
-                ui.p(
-                    "Snapshot created:",
-                    style="font-weight: 600;"
-                ),
-
-                ui.tags.a(
-                    "Download AI snapshot",
-                    href=relative_url,
-                    download=relative_url.rsplit("/", 1)[-1]
-                ),
-
-                ui.br(),
-                ui.br(),
-
-                # ----------------------------------------------------
-                # URL field
-                #
-                # JavaScript fills this with the complete absolute URL
-                # such as:
-                # http://127.0.0.1:8080/ai_snapshots/xxx.json
-                # ----------------------------------------------------
-
-                ui.tags.input(
-                    id="ai_snapshot_url_field",
-                    type="text",
-                    readonly="readonly",
-                    value=relative_url,
-                    class_="form-control ai-snapshot-url",
-                    onclick="this.select();"
-                ),
-
-                ui.br(),
-
-                # ----------------------------------------------------
-                # Copy button
-                # ----------------------------------------------------
-
-                ui.tags.button(
-                    "📋 Copy URL",
-
-                    id="copy_ai_snapshot_button",
-
-                    type="button",
-
-                    class_="btn btn-secondary",
-
-                    onclick="""
-                        const field =
-                            document.getElementById(
-                                'ai_snapshot_url_field'
-                            );
-
-                        if (!field) {
-                            alert('Snapshot URL field not found.');
-                            return;
-                        }
-
-                        field.focus();
-                        field.select();
-                        field.setSelectionRange(
-                            0,
-                            field.value.length
-                        );
-
-                        const successful =
-                            document.execCommand('copy');
-
-                        if (successful) {
-                            this.innerText = '✓ Copied!';
-                        } else {
-                            this.innerText = 'Select URL and press Ctrl+C';
-                        }
-                    """
-                ),
-
-                ui.br(),
-                ui.br(),
-
-                ui.p(
-                    "Paste this URL into ChatGPT, Claude, Gemini "
-                    "or another LLM. The snapshot expires after "
-                    "14 days or when the app container is rebuilt.",
-                    class_="text-muted"
-                ),
-
-                # ----------------------------------------------------
-                # Convert relative URL into complete URL
-                # ----------------------------------------------------
-
-                ui.tags.script(
-                    f"""
-                    (function() {{
-
-                        const field =
-                            document.getElementById(
-                                'ai_snapshot_url_field'
-                            );
-
-                        if (!field) return;
-
-                        field.value =
-                            new URL(
-                                '{relative_url}',
-                                window.location.href
-                            ).href;
-
-                    }})();
-                    """
-                )
-            )
-            
-        @reactive.effect
-        def reset_ai_snapshot_when_state_changes():
-            """
-            Remove the displayed snapshot whenever an input that
-            affects the represented analysis state changes.
-
-            The already-created JSON file is NOT deleted.
-            """
-
-            # ========================================================
-            # Register all relevant reactive dependencies
-            # ========================================================
-
-            input.splitting_key()
-            input.contrast()
-
-            # Sidebar filters
-            input.logfc_threshold()
-            input.lrscore_threshold()
-            input.specificity_threshold()
-            input.min_source_cells()
-            input.min_target_cells()
-            input.source_types()
-            input.target_types()
-
-            # Overview
-            input.overview_interaction_top_n()
-            input.overview_apply_filters()
-
-            input.overview_condition_comparison()
-
-            input.overview_cell_metric()
-            input.overview_cell_mode()
-            input.overview_cell_top_n()
-
-            input.overview_lr_diff_metric()
-            input.overview_lr_diff_top_n()
-            input.overview_lr_diff_apply_filters()
-
-            # Network
-            input.network_options()
-            input.network_top_n()
-            input.network_layout()
-            input.cell_count_network_top_n()
-
-            # Heatmap
-            input.heatmap_metric()
-            input.show_heatmap_values()
-            input.colorscale()
-
-            # Ligand–receptor tab
-            input.top_n_interactions()
-            input.dotplot_color()
-
-            input.lr_boxplot_metric()
-            input.lr_boxplot_top_n()
-
-            # Data table
-            input.table_rows()
-            input.table_search()
-
-            # ========================================================
-            # Reset the CURRENTLY DISPLAYED snapshot
-            # ========================================================
-
-            ai_snapshot_relative_url.set(
-                None
-            )
-
-            ui.update_action_button(
-                "create_ai_snapshot",
-                label="🔗 Create AI Snapshot"
-            )
-        
         @output
         @render_plotly
         def network_plot():

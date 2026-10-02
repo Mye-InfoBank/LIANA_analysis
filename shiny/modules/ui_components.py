@@ -114,21 +114,15 @@ def create_sidebar(data_dir: str = "/nfs/data/COST_IBD/downstream_tasks/interact
             ui.h4("🤖 AI Analysis"),
 
             ui.p(
-                "Create a machine-readable snapshot of the current "
-                "analysis state for use with AI assistants.",
+                "Download a machine-readable snapshot of the current "
+                "analysis state, then upload the file to ChatGPT, Claude, "
+                "Gemini or another LLM and ask your question.",
                 class_="text-muted"
             ),
-            ui.input_action_button(
-                "create_ai_snapshot",
-                "🔗 Create AI Snapshot",
+            ui.download_button(
+                "download_ai_snapshot",
+                "Download AI Snapshot",
                 class_="btn-primary"
-            ),
-
-            ui.br(),
-            ui.br(),
-
-            ui.output_ui(
-                "ai_snapshot_link"
             ),
 
             ui.br(),
@@ -992,10 +986,6 @@ def create_app_styles() -> ui.TagChild:
             .plotly-graph-div {
                 border-radius: 10px;
                 box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-            }
-            .ai-snapshot-url {
-                word-break: break-all;
-                font-size: 0.85em;
             }
             /* File upload in narrow sidebar */
             .sidebar-content .shiny-input-container:has(input[type="file"]) {
